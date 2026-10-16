@@ -114,34 +114,35 @@ Wirtualna szafka obiektowa z fizycznymi elementami łączeniowymi:
 
 ---
 
-## 4. Struktura Katalogów, Wersjonowanie i Kompilacja
+## 4. Struktura Katalogów, Wersjonowanie i Dystrybucja
 
-Katalog symulatora: `narzedzia/symulator v350 portable/`
+Pliki binarne symulatora (`virtualplc.exe`) są publikowane w oficjalnych wydaniach **[GitHub Releases](https://github.com/PROCHOTKILLER/Unitronics-Vision-PLC-HMI-Simulator/releases)**.
 
-Zgodnie ze standardem czystej dystrybucji, w katalogu głównym symulatora znajdują się **wyłącznie**:
-1. **`virtualplc.exe`** – kompletny, samodzielny plik wykonywalny symulatora (wersja 0.0.3).
-2. **`INSTRUKCJA_SYMULATORA.md`** – niniejsza dokumentacja i DTR (wersja 0.0.3).
-3. Podkatalog **`roboczy/`** – środowisko deweloperskie i pliki robocze.
-4. Podkatalog **`stare wersje/`** – automatyczne archiwum poprzednich wydań (maksymalnie 5 ostatnich wersji).
+Struktura repozytorium:
+1. **`SIMULATOR_MANUAL.md`** – dokumentacja techniczna i DTR.
+2. **`README.md`** – opis projektu w języku angielskim.
+3. **`Run_Simulator.bat`** – skrypt uruchomieniowy.
+4. Podkatalog **`src/`** – kody źródłowe C# (.NET 4.0/4.8) oraz skrypty kompilacji.
+5. Podkatalog **`archive/`** – automatyczne archiwum poprzednich wydań roboczych (maksymalnie 5 ostatnich wersji).
 
-### Zawartość katalogu roboczego (`roboczy/`):
+### Zawartość katalogu źródłowego (`src/`):
 - `build.bat` – skrypt kompilacji i rotacji wersji.
-- `rotate_versions.ps1` – skrypt automatycznej rotacji archiwalnych wydań (limit 5).
+- `rotate_versions.ps1` – skrypt automatycznej rotacji wydań w katalogu `archive/` (limit 5).
 - `AppLogger.cs` – moduł bezpiecznego wielowątkowego logowania zdarzeń do pliku tekstowego.
-- `Program.cs` – punkt startowy aplikacji WinForms wraz z atrybutami wersji zestawu i przechwytywaniem wyjątków.
+- `Program.cs` – punkt startowy aplikacji WinForms wraz z atrybutami wersji zestawu.
 - `MainForm.cs` – zintegrowany pulpit operatorski.
 - `PlcEngine.cs` – silnik programowy Soft-PLC z mapą pamięci i ewaluatorem drabinki.
-- `VlpParser.cs` – bezpośredni parser plików `.vlp` / `.udb` z odczytem tabeli `LdrOperands`.
-- `HmiRenderer.cs` – silnik renderowania TFT 3.5" (320x240) z dotykiem i słupkami bargraph.
+- `VlpParser.cs` – parser projektów VisiLogic `.vlp` / `.udb`.
+- `HmiRenderer.cs` – silnik renderowania TFT (320x240 px) z dotykiem i słupkami bargraph.
 - `HardwarePanel.cs` – panel wirtualnej szafki I/O z przełącznikami i suwakami.
-- `PcomServer.cs` – serwer TCP protokołu Unitronics PCOM (:20256) z obsługą PCOM ASCII & Binary oraz Download.
-- `inspect_udb.ps1` – skrypt diagnostyczny bazy danych projektu.
-- `Uruchom_Symulator_V350.bat` – pomocniczy skrypt uruchamiający.
+- `PcomServer.cs` – serwer TCP protokołu Unitronics PCOM (:20256) z obsługą PCOM ASCII & Binary oraz procedury Download.
+- `Run_Simulator.bat` – pomocniczy skrypt uruchamiający.
 
-### Zasada wersjonowania i archiwizacji (Katalog `stare wersje/`):
+### Zasada wersjonowania i archiwizacji (Katalog `archive/`):
 - Numeracja wersji rozpoczyna się od **0.0.1** i jest inkrementowana przy każdej ingerencji w kod lub dokumentację (obecnie: **0.0.3**).
-- Przed każdą nową kompilacją poprzednia wersja `virtualplc.exe` oraz instrukcji jest automatycznie przenoszona do dedykowanego podfolderu w `stare wersje/vX.Y.Z/`.
-- Katalog `stare wersje/` przechowuje **dokładnie do 5 ostatnich wydań** – najstarsze wydania powyżej tego limitu są automatycznie usuwane podczas budowania nowej wersji.
+- Przed każdą nową kompilacją poprzednia wersja `virtualplc.exe` oraz instrukcji jest automatycznie przenoszona do dedykowanego podfolderu w `archive/vX.Y.Z/`.
+- Katalog `archive/` przechowuje **dokładnie do 5 ostatnich wydań** – najstarsze wydania powyżej tego limitu są automatycznie usuwane podczas budowania nowej wersji.
+- Oficjalne pliki binarne dla użytkowników są załączane bezpośrednio do wydań na GitHubie w sekcji **Releases**.
 
 ---
 
@@ -153,19 +154,19 @@ Zgodnie ze standardem czystej dystrybucji, w katalogu głównym symulatora znajd
   - Poprawny format odpowiedzi PCOM ASCII: prefiks `/A`, 2-znakowa suma kontrolna modulo 256 sumy bajtów oraz obsługa zapytań o status gotowości do pobrania `/00GS01330122` (rejestr systemowy SI 307).
   - Poprawny format ramek binarnych PCOM: magic `/_OPLC`, 24-bajtowy nagłówek, 16-bit complement CRC, obsługa komend zapisu bufora (`0x41`), zatwierdzenia flash (`0x1A`), translacji indeksów (`0x16`), autoryzacji hasła (`0x02`) oraz zapytania o nazwę (`0x0C`).
   - Automatyczna detekcja skompilowanego projektu z systemowej bazy danych `OPLC.ini` (`[3000] 3001=...`) i natychmiastowe dynamiczne przeładowanie programu drabinkowego, operandów oraz ekranów HMI do symulatora po wgraniu programu w VisiLogic.
-  - Automatyczna archiwizacja wersji v0.0.2 do `stare wersje/v0.0.2/`.
+  - Automatyczna archiwizacja wersji v0.0.2 do `archive/v0.0.2/`.
 
 - **v0.0.2 (2026-10-16)**:
   - Wdrożenie funkcji logowania debugowania do pliku tekstowego `virtualplc_debug.log` w katalogu uruchomienia aplikacji (`AppDomain.CurrentDomain.BaseDirectory`).
   - Dodanie klasy `AppLogger` z bezpiecznym zapisem wielowątkowym, poziomami logowania (INFO, DEBUG, ERROR, PCOM, TOUCH) i rotacją pliku przy 15 MB.
   - Globalne przechwytywanie nieobsłużonych wyjątków (`ThreadException`, `UnhandledException`) z pełnym zrzutem śladu stosu (Stack Trace) do pliku tekstowego.
   - Dodanie przycisku szybkiego podglądu pliku logu w zakładce „Dziennik Zdarzeń & PCOM” oraz w menu `Pomoc`.
-  - Automatyczna archiwizacja wersji v0.0.1 do katalogu `stare wersje/v0.0.1/`.
+  - Automatyczna archiwizacja wersji v0.0.1 do katalogu `archive/v0.0.1/`.
 
 - **v0.0.1 (2026-10-16)**:
   - Wprowadzenie oficjalnego wersjonowania semantycznego od numeru 0.0.1.
-  - Reorganizacja struktury plików: odseparowanie katalogu roboczego (`roboczy/`) od głównego folderu dystrybucyjnego.
-  - Wdrożenie automatycznej archiwizacji do katalogu `stare wersje/` z zachowaniem 5 ostatnich wersji.
+  - Reorganizacja struktury plików: odseparowanie katalogu roboczego (`src/`) od głównego repozytorium.
+  - Wdrożenie automatycznej archiwizacji do katalogu `archive/` z zachowaniem 5 ostatnich wersji.
   - Pełne kodowanie UTF-8 (eliminacja efektu mojibake przy polskich znakach diakrytycznych).
   - Natychmiastowa reakcja ekranu TFT HMI na dotyk (odświeżanie poniżej 15 ms).
   - Pełne ładowanie bazy operandów MB 0..255 i MI 0..127 z projektów VisiLogic.

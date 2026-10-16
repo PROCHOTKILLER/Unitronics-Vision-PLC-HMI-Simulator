@@ -1,3 +1,7 @@
+# Executables (distributed via GitHub Releases)
+/*.exe
+archive/*.exe
+
 # Logs
 *.log
 virtualplc_debug.log

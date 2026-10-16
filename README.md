@@ -53,7 +53,8 @@ This simulator is designed to emulate the complete runtime environment for all p
 - **Portable Single-Binary Deployment**:
   - Entire simulator bundled in a single standalone executable: `virtualplc.exe`.
   - Zero installers or third-party runtime dependencies required.
-  - Automated 5-version retention archiving script (`rotate_versions.ps1`) storing backups in `stare wersje/`.
+  - Binaries are distributed directly via **[GitHub Releases](https://github.com/PROCHOTKILLER/Unitronics-Vision-PLC-HMI-Simulator/releases)**.
+  - Automated 5-version retention archiving script (`rotate_versions.ps1`) storing backups in `archive/`.
   - Diagnostic logging engine writing to `virtualplc_debug.log`.
 
 ---
@@ -63,9 +64,9 @@ This simulator is designed to emulate the complete runtime environment for all p
 ```text
 Unitronics-Vision-PLC-HMI-Simulator/
 │
-├── virtualplc.exe               # Latest standalone executable (v0.0.3)
-├── SIMULATOR_MANUAL.md          # Detailed manual & setup guide
+├── SIMULATOR_MANUAL.md          # Technical manual & operation guide
 ├── README.md                    # Project documentation
+├── Run_Simulator.bat            # Quick launcher script
 │
 ├── src/                         # Source code & build workspace
 │   ├── build.bat                # 1-click build script using csc.exe
@@ -83,6 +84,8 @@ Unitronics-Vision-PLC-HMI-Simulator/
     └── v0.0.2/
 ```
 
+> 💡 **Pre-built Executable:** Download the ready-to-run `virtualplc.exe` from the [Releases](https://github.com/PROCHOTKILLER/Unitronics-Vision-PLC-HMI-Simulator/releases) tab.
+
 ---
 
 ## 🛠️ Building from Source
@@ -95,7 +98,7 @@ The project compiles with Microsoft Visual C# Compiler (`csc.exe`) bundled with 
    cd src
    build.bat
    ```
-3. The script compiles the code using `/platform:x86 /target:winexe /optimize+` and outputs the updated `virtualplc.exe` into the root directory while automatically archiving the previous release into `stare wersje/`.
+3. The script compiles the code using `/platform:x86 /target:winexe /optimize+` and outputs the updated `virtualplc.exe` into the workspace while archiving the previous release into `archive/`.
 
 ---
 
