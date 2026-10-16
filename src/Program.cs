@@ -2,11 +2,11 @@ using System;
 using System.Reflection;
 using System.Windows.Forms;
 
-[assembly: AssemblyTitle("VirtualPLC Unitronics V350 Simulator")]
-[assembly: AssemblyDescription("Symulator PLC/HMI Unitronics Vision V350-35-RA22")]
+[assembly: AssemblyTitle("VirtualPLC Unitronics Vision PLC/HMI Simulator")]
+[assembly: AssemblyDescription("Bilingual PLC/HMI Simulator for Unitronics Vision Series (V130 - V1210)")]
 [assembly: AssemblyProduct("VirtualPLC")]
-[assembly: AssemblyVersion("0.0.3.0")]
-[assembly: AssemblyFileVersion("0.0.3.0")]
+[assembly: AssemblyVersion("0.0.4.0")]
+[assembly: AssemblyFileVersion("0.0.4.0")]
 
 namespace UnitronicsV350Simulator
 {
@@ -15,25 +15,32 @@ namespace UnitronicsV350Simulator
         [STAThread]
         static void Main(string[] args)
         {
-            // Inicjalizacja glownego loggera do pliku virtualplc_debug.log w biezacym katalogu startowym
-            AppLogger.Init("0.0.3", args);
-            AppLogger.Info("Start aplikacji VirtualPLC v0.0.3");
+            // 1. Ładowanie trwałej konfiguracji symulatora
+            var config = SimulatorConfig.Load();
 
-            // Globalne lapanie wyjatkow watku UI i domeny aplikacji
+            // 2. Inicjalizacja wielowątkowego loggera do pliku virtualplc_debug.log
+            AppLogger.Init("0.0.4", args);
+            AppLogger.Configure(config);
+            AppLogger.Info("Start aplikacji VirtualPLC v0.0.4");
+
+            // 3. Inicjalizacja języka interfejsu
+            Localization.SetLanguage(config.Language);
+
+            // Globalne łapanie wyjątków wątku UI i domeny aplikacji
             Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
             Application.ThreadException += (s, e) =>
             {
-                AppLogger.Error("Nieobsluzony wyjatek w watku glownym UI", e.Exception);
+                AppLogger.Error("Nieobsłużony wyjątek w wątku głównym UI", e.Exception);
                 MessageBox.Show(
-                    "Wystapil nieobslugiwany blad w symulatorze:\n" + e.Exception.Message + 
-                    "\n\nSzczegoly zostaly zapisane w pliku:\n" + AppLogger.LogFilePath,
-                    "Blad VirtualPLC", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    "Wystąpił nieobsługiwany błąd w symulatorze:\n" + e.Exception.Message + 
+                    "\n\nSzczegóły zostały zapisane w pliku:\n" + AppLogger.LogFilePath,
+                    "Błąd VirtualPLC", MessageBoxButtons.OK, MessageBoxIcon.Error);
             };
 
             AppDomain.CurrentDomain.UnhandledException += (s, e) =>
             {
                 var ex = e.ExceptionObject as Exception;
-                AppLogger.Error("Krytyczny wyjatek w domenie aplikacji (UnhandledException)", ex);
+                AppLogger.Error("Krytyczny wyjątek w domenie aplikacji (UnhandledException)", ex);
             };
 
             Application.EnableVisualStyles();
@@ -41,9 +48,29 @@ namespace UnitronicsV350Simulator
 
             try
             {
-                var mainForm = new MainForm();
+                // 4. Panel konfiguracji sprzętowej przed uruchomieniem (jeśli włączony w opcjach)
+                if (config.ShowConfigOnStartup)
+                {
+                    AppLogger.Info("Wyświetlanie okna konfiguracji sprzętowej na starcie (ShowConfigOnStartup=true)...");
+                    using (var hwDlg = new HardwareConfigDialog(config.Profile, startupMode: true))
+                    {
+                        var dlgRes = hwDlg.ShowDialog();
+                        if (dlgRes != DialogResult.OK)
+                        {
+                            AppLogger.Info("Uruchomienie symulatora anulowane przez użytkownika w oknie konfiguracji sprzętowej.");
+                            return;
+                        }
 
-                // Jesli podano sciezke do pliku .vlp w argumentach wiersza polecen
+                        config.Profile = hwDlg.ResultProfile;
+                        config.ShowConfigOnStartup = hwDlg.ShowOnStartupValue;
+                        config.Save();
+                        AppLogger.Info("Profil sprzętowy zatwierdzony na starcie: " + config.Profile.GetModelFullName());
+                    }
+                }
+
+                var mainForm = new MainForm(config);
+
+                // Jeśli podano ścieżkę do pliku .vlp w argumentach wiersza poleceń
                 if (args != null && args.Length > 0 && !string.IsNullOrEmpty(args[0]))
                 {
                     string argPath = args[0].Trim('"', ' ');
@@ -58,12 +85,12 @@ namespace UnitronicsV350Simulator
             }
             catch (Exception ex)
             {
-                AppLogger.Error("Blad podczas wykonywania Application.Run()", ex);
+                AppLogger.Error("Błąd podczas wykonywania Application.Run()", ex);
                 throw;
             }
             finally
             {
-                AppLogger.Info("Zakonczenie pracy aplikacji VirtualPLC v0.0.3 (Clean Exit).");
+                AppLogger.Info("Zakończenie pracy aplikacji VirtualPLC v0.0.4 (Clean Exit).");
             }
         }
     }

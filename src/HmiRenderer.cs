@@ -7,8 +7,32 @@ namespace UnitronicsV350Simulator
 {
     public class HmiRenderer
     {
-        public const int SCREEN_WIDTH = 320;
-        public const int SCREEN_HEIGHT = 240;
+        public const int DEFAULT_SCREEN_WIDTH = 320;
+        public const int DEFAULT_SCREEN_HEIGHT = 240;
+
+        public int ScreenWidth
+        {
+            get
+            {
+                if (plc != null && plc.Profile != null)
+                {
+                    return plc.Profile.GetCurrentModelSpec().ScreenWidth;
+                }
+                return DEFAULT_SCREEN_WIDTH;
+            }
+        }
+
+        public int ScreenHeight
+        {
+            get
+            {
+                if (plc != null && plc.Profile != null)
+                {
+                    return plc.Profile.GetCurrentModelSpec().ScreenHeight;
+                }
+                return DEFAULT_SCREEN_HEIGHT;
+            }
+        }
 
         private PlcEngine plc;
         private Bitmap renderBitmap;
@@ -22,14 +46,28 @@ namespace UnitronicsV350Simulator
         public HmiRenderer(PlcEngine engine)
         {
             plc = engine;
-            renderBitmap = new Bitmap(SCREEN_WIDTH, SCREEN_HEIGHT);
-            g = Graphics.FromImage(renderBitmap);
-            g.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
-            g.SmoothingMode = SmoothingMode.AntiAlias;
+            EnsureBitmapSize();
+        }
+
+        private void EnsureBitmapSize()
+        {
+            int w = ScreenWidth;
+            int h = ScreenHeight;
+            if (renderBitmap == null || renderBitmap.Width != w || renderBitmap.Height != h)
+            {
+                if (g != null) { g.Dispose(); g = null; }
+                if (renderBitmap != null) { renderBitmap.Dispose(); renderBitmap = null; }
+                renderBitmap = new Bitmap(w, h);
+                g = Graphics.FromImage(renderBitmap);
+                g.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
+                g.SmoothingMode = SmoothingMode.AntiAlias;
+            }
         }
 
         public Bitmap RenderScreen(int activePageId)
         {
+            EnsureBitmapSize();
+
             if (!plc.HasProgramLoaded)
             {
                 RenderBootScreen();
@@ -49,36 +87,41 @@ namespace UnitronicsV350Simulator
 
         private void RenderBootScreen()
         {
+            var spec = (plc != null && plc.Profile != null) ? plc.Profile.GetCurrentModelSpec() : null;
+            string family = spec != null ? spec.Family : "Vision 350";
+            string modelName = spec != null ? spec.ModelName : "V350-35-RA22";
+            string displayType = spec != null ? spec.DisplayType : "Color TFT 3.5\"";
+
             // Tło w stylu przemysłowym OPLC
             using (var bgBrush = new SolidBrush(Color.FromArgb(12, 25, 44)))
             {
-                g.FillRectangle(bgBrush, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
+                g.FillRectangle(bgBrush, 0, 0, ScreenWidth, ScreenHeight);
             }
 
             // Nagłówek Unitronics
             using (var hdrBrush = new SolidBrush(Color.FromArgb(20, 48, 85)))
             {
-                g.FillRectangle(hdrBrush, 0, 0, SCREEN_WIDTH, 30);
+                g.FillRectangle(hdrBrush, 0, 0, ScreenWidth, 30);
             }
             using (var borderPen = new Pen(Color.FromArgb(0, 150, 255), 1))
             {
-                g.DrawLine(borderPen, 0, 30, SCREEN_WIDTH, 30);
+                g.DrawLine(borderPen, 0, 30, ScreenWidth, 30);
             }
 
             using (var fontHdr = new Font("Segoe UI", 10, FontStyle.Bold))
             using (var brushWhite = new SolidBrush(Color.White))
             {
-                g.DrawString("UNITRONICS VISION V350", fontHdr, brushWhite, 10, 6);
+                g.DrawString("UNITRONICS " + family.ToUpper(), fontHdr, brushWhite, 10, 6);
             }
 
             using (var fontSmall = new Font("Segoe UI", 7, FontStyle.Regular))
             using (var brushCyan = new SolidBrush(Color.FromArgb(0, 220, 255)))
             {
-                g.DrawString("Micro-OPLC | Color TFT 3.5\"", fontSmall, brushCyan, 185, 9);
+                g.DrawString(modelName + " | " + displayType, fontSmall, brushCyan, Math.Max(120, ScreenWidth - 170), 9);
             }
 
             // Ramka informacyjna
-            int boxX = 15, boxY = 40, boxW = 290, boxH = 185;
+            int boxX = 15, boxY = 40, boxW = ScreenWidth - 30, boxH = ScreenHeight - 55;
             using (var boxBrush = new SolidBrush(Color.FromArgb(18, 32, 54)))
             using (var boxPen = new Pen(Color.FromArgb(40, 75, 120), 1))
             {
@@ -92,10 +135,12 @@ namespace UnitronicsV350Simulator
             using (var brushText = new SolidBrush(Color.FromArgb(200, 220, 240)))
             using (var brushGreen = new SolidBrush(Color.FromArgb(0, 230, 118)))
             {
-                g.DrawString("Hardware:  Unitronics V350-35-RA22", fontSysBold, brushYellow, boxX + 10, boxY + 10);
-                g.DrawString("Expansion: EX-A2X Bus Ready", fontSys, brushText, boxX + 10, boxY + 26);
+                g.DrawString("Hardware:  Unitronics " + (plc != null && plc.Profile != null ? plc.Profile.GetModelFullName() : modelName), fontSysBold, brushYellow, boxX + 10, boxY + 10);
+                string expInfo = (plc != null && plc.Profile != null && plc.Profile.EnableExpansionBus) ? "EX-A2X Bus Ready (Active)" : "EX-A2X Bus Disabled";
+                g.DrawString("Expansion: " + expInfo, fontSys, brushText, boxX + 10, boxY + 26);
                 g.DrawString("OS Vers:   4.04 (12) | Boot: 2.02 (03)", fontSys, brushText, boxX + 10, boxY + 42);
-                g.DrawString("PCOM Port: TCP/IP Port 20256 (PCOM)", fontSys, brushGreen, boxX + 10, boxY + 58);
+                int pcomPort = SimulatorConfig.Current != null ? SimulatorConfig.Current.PcomPort : 20256;
+                g.DrawString(string.Format("PCOM Port: TCP/IP Port {0} (PCOM)", pcomPort), fontSys, brushGreen, boxX + 10, boxY + 58);
 
                 // Separator
                 g.DrawLine(Pens.SteelBlue, boxX + 10, boxY + 76, boxX + boxW - 10, boxY + 76);
@@ -104,17 +149,17 @@ namespace UnitronicsV350Simulator
                 using (var alertFont = new Font("Segoe UI", 9, FontStyle.Bold))
                 using (var alertBrush = new SolidBrush(Color.FromArgb(255, 82, 82)))
                 {
-                    g.DrawString("[ STATUS: BRAK PROGRAMU UŻYTKOWNIKA ]", alertFont, alertBrush, boxX + 15, boxY + 84);
+                    g.DrawString(string.Format("[ {0}: {1} ]", Localization.T("Status_Plc", "STATUS"), Localization.T("Status_NoProgram", "NO USER PROGRAM")), alertFont, alertBrush, boxX + 15, boxY + 84);
                 }
 
                 using (var infoFont = new Font("Segoe UI", 8, FontStyle.Regular))
                 using (var infoBrush = new SolidBrush(Color.FromArgb(180, 200, 220)))
                 {
-                    g.DrawString("Sterownik jest w czystym stanie fabrycznym.", infoFont, infoBrush, boxX + 15, boxY + 106);
-                    g.DrawString("Wszystkie wyjścia są wyłączone (OFF).", infoFont, infoBrush, boxX + 15, boxY + 122);
-                    g.DrawString("Aby uruchomić aplikację:", infoFont, brushYellow, boxX + 15, boxY + 140);
-                    g.DrawString("-> Kliknij menu 'Plik -> Załaduj projekt (*.vlp)'", infoFont, brushGreen, boxX + 20, boxY + 155);
-                    g.DrawString("-> LUB połącz VisiLogic po TCP 127.0.0.1:20256", infoFont, brushGreen, boxX + 20, boxY + 168);
+                    g.DrawString(Localization.T("Boot_CleanState", "Controller is in clean factory standby mode."), infoFont, infoBrush, boxX + 15, boxY + 106);
+                    g.DrawString(Localization.T("Boot_OutputsOff", "All digital and analog outputs are OFF."), infoFont, infoBrush, boxX + 15, boxY + 122);
+                    g.DrawString(Localization.T("Boot_HowToStart", "To start program execution:"), infoFont, brushYellow, boxX + 15, boxY + 140);
+                    g.DrawString(Localization.T("Boot_LoadVlp", "-> Click 'File -> Load VisiLogic Project (*.vlp)'"), infoFont, brushGreen, boxX + 20, boxY + 155);
+                    g.DrawString(string.Format(Localization.T("Boot_ConnectPcom", "-> OR connect VisiLogic via TCP 127.0.0.1:{0}"), pcomPort), infoFont, brushGreen, boxX + 20, boxY + 168);
                 }
             }
         }
@@ -149,7 +194,7 @@ namespace UnitronicsV350Simulator
             }
             using (var bgBrush = new SolidBrush(bgColor))
             {
-                g.FillRectangle(bgBrush, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
+                g.FillRectangle(bgBrush, 0, 0, ScreenWidth, ScreenHeight);
             }
 
             // Rysowanie elementów HMI
@@ -161,14 +206,14 @@ namespace UnitronicsV350Simulator
             // Pasek statusowy HMI na dole
             using (var barBrush = new SolidBrush(Color.FromArgb(40, 44, 52)))
             {
-                g.FillRectangle(barBrush, 0, 222, SCREEN_WIDTH, 18);
+                g.FillRectangle(barBrush, 0, ScreenHeight - 18, ScreenWidth, 18);
             }
             using (var fontBar = new Font("Segoe UI", 7, FontStyle.Regular))
             using (var brushBarText = new SolidBrush(Color.FromArgb(220, 220, 220)))
             {
                 string statusText = string.Format("P{0}: {1} | SCAN: {2}ms | {3}",
                     page.Id, page.Name, plc.SI[0], plc.State == PlcRunState.RUN ? "RUN" : "STOP");
-                g.DrawString(statusText, fontBar, brushBarText, 4, 224);
+                g.DrawString(statusText, fontBar, brushBarText, 4, ScreenHeight - 16);
             }
         }
 
@@ -491,13 +536,13 @@ namespace UnitronicsV350Simulator
             // Półprzezroczyste przyciemnienie tła
             using (var dimBrush = new SolidBrush(Color.FromArgb(180, 0, 0, 0)))
             {
-                g.FillRectangle(dimBrush, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
+                g.FillRectangle(dimBrush, 0, 0, ScreenWidth, ScreenHeight);
             }
 
             // Okno klawiatury numerycznej
             int kw = 180, kh = 200;
-            int kx = (SCREEN_WIDTH - kw) / 2;
-            int ky = (SCREEN_HEIGHT - kh) / 2;
+            int kx = (ScreenWidth - kw) / 2;
+            int ky = (ScreenHeight - kh) / 2;
 
             using (var boxBrush = new SolidBrush(Color.FromArgb(35, 40, 50)))
             using (var boxPen = new Pen(Color.FromArgb(0, 150, 255), 2))
@@ -694,8 +739,8 @@ namespace UnitronicsV350Simulator
         private void HandleKeypadClick(int x, int y)
         {
             int kw = 180, kh = 200;
-            int kx = (SCREEN_WIDTH - kw) / 2;
-            int ky = (SCREEN_HEIGHT - kh) / 2;
+            int kx = (ScreenWidth - kw) / 2;
+            int ky = (ScreenHeight - kh) / 2;
             int fieldY = ky + 25;
             int startY = fieldY + 32;
             int btnW = 36, btnH = 26;

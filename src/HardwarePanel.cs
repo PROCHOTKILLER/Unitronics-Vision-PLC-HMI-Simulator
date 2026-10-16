@@ -8,569 +8,707 @@ namespace UnitronicsV350Simulator
     public class HardwarePanel : UserControl
     {
         private PlcEngine plc;
+        private HardwareProfile profile;
+
+        private TabControl tabControl;
+        private TabPage tabDi;
+        private TabPage tabDo;
+        private TabPage tabAi;
+        private TabPage tabAo;
 
         private FlowLayoutPanel flowInputsCpu;
-        private FlowLayoutPanel flowInputsExt;
+        private List<FlowLayoutPanel> flowInputsExt = new List<FlowLayoutPanel>();
+
         private FlowLayoutPanel flowOutputsCpu;
-        private FlowLayoutPanel flowOutputsExt;
+        private List<FlowLayoutPanel> flowOutputsExt = new List<FlowLayoutPanel>();
+
         private Panel panelAnalogInputs;
         private Panel panelAnalogOutputs;
 
-        // Kontrolki wejść cyfrowych
-        private CheckBox[] chkInputs = new CheckBox[20];
-        private Label[] lblInputLeds = new Label[20];
-        private Label[] lblInputTexts = new Label[20];
-        private Button[] btnMomentaryInputs = new Button[20];
+        // Kontrolki wejść cyfrowych (do 128)
+        private CheckBox[] chkInputs = new CheckBox[128];
+        private Label[] lblInputLeds = new Label[128];
+        private Label[] lblInputTexts = new Label[128];
+        private Button[] btnMomentaryInputs = new Button[128];
 
-        // Kontrolki wyjść cyfrowych
-        private Label[] lblOutputLeds = new Label[16];
-        private Label[] lblOutputTexts = new Label[16];
+        // Kontrolki wyjść cyfrowych (do 128)
+        private Label[] lblOutputLeds = new Label[128];
+        private Label[] lblOutputTexts = new Label[128];
 
-        // Kontrolki wejść analogowych
-        private TrackBar[] trackAnalogs = new TrackBar[4];
-        private NumericUpDown[] numAnalogs = new NumericUpDown[4];
-        private Label[] lblAnalogLabels = new Label[4];
+        // Kontrolki wejść analogowych (do 16)
+        private TrackBar[] trackAnalogs = new TrackBar[16];
+        private NumericUpDown[] numAnalogs = new NumericUpDown[16];
+        private Label[] lblAnalogLabels = new Label[16];
 
-        // Kontrolki wyjść analogowych
-        private Label[] lblAoVoltages = new Label[2];
-        private ProgressBar[] barAoVoltages = new ProgressBar[2];
+        // Kontrolki wyjść analogowych (do 8)
+        private Label[] lblAoVoltages = new Label[8];
+        private ProgressBar[] barAoVoltages = new ProgressBar[8];
 
         public HardwarePanel(PlcEngine engine)
         {
             plc = engine;
+            profile = engine.Profile ?? HardwareProfile.CreateDefaultProfile();
+
             this.DoubleBuffered = true;
             this.BackColor = Color.FromArgb(28, 32, 40);
             this.Font = new Font("Segoe UI", 8.25f, FontStyle.Regular);
             this.ForeColor = Color.White;
 
-            InitializeLayout();
+            BuildLayout();
             plc.OnScanCompleted += OnPlcScanCompleted;
+            Localization.OnLanguageChanged += ApplyLanguage;
         }
 
-        private void InitializeLayout()
+        public void RebuildLayout(HardwareProfile newProfile)
         {
-            var tabControl = new TabControl();
+            profile = newProfile ?? HardwareProfile.CreateDefaultProfile();
+            this.Controls.Clear();
+            flowInputsExt.Clear();
+            flowOutputsExt.Clear();
+            Array.Clear(chkInputs, 0, chkInputs.Length);
+            Array.Clear(lblInputLeds, 0, lblInputLeds.Length);
+            Array.Clear(lblInputTexts, 0, lblInputTexts.Length);
+            Array.Clear(btnMomentaryInputs, 0, btnMomentaryInputs.Length);
+            Array.Clear(lblOutputLeds, 0, lblOutputLeds.Length);
+            Array.Clear(lblOutputTexts, 0, lblOutputTexts.Length);
+            Array.Clear(trackAnalogs, 0, trackAnalogs.Length);
+            Array.Clear(numAnalogs, 0, numAnalogs.Length);
+            Array.Clear(lblAnalogLabels, 0, lblAnalogLabels.Length);
+            Array.Clear(lblAoVoltages, 0, lblAoVoltages.Length);
+            Array.Clear(barAoVoltages, 0, barAoVoltages.Length);
+
+            BuildLayout();
+            ApplyProjectDescriptions();
+        }
+
+        private void BuildLayout()
+        {
+            tabControl = new TabControl();
             tabControl.Dock = DockStyle.Fill;
 
-            // Zakładka 1: Wejścia cyfrowe (DI)
-            var tabDi = new TabPage("Wejścia Cyfrowe (DI)");
+            // --- Zakładka 1: Wejścia cyfrowe (DI) ---
+            tabDi = new TabPage(Localization.T("Hw_Tab_DI"));
             tabDi.BackColor = Color.FromArgb(28, 32, 40);
 
-            var splitDi = new SplitContainer
-            {
-                Dock = DockStyle.Fill,
-                Orientation = Orientation.Vertical,
-                SplitterDistance = 240,
-                BackColor = Color.FromArgb(40, 45, 55)
-            };
+            var pnlDiContainer = new Panel { Dock = DockStyle.Fill, AutoScroll = true };
+            BuildDynamicInputs(pnlDiContainer);
+            tabDi.Controls.Add(pnlDiContainer);
 
-            var grpCpuDi = new GroupBox
-            {
-                Text = "CPU V350-35-RA22 (Wejścia I0 .. I11)",
-                Dock = DockStyle.Fill,
-                ForeColor = Color.FromArgb(0, 220, 255)
-            };
-            flowInputsCpu = new FlowLayoutPanel
-            {
-                Dock = DockStyle.Fill,
-                AutoScroll = true,
-                FlowDirection = FlowDirection.TopDown,
-                WrapContents = false
-            };
-            grpCpuDi.Controls.Add(flowInputsCpu);
-            splitDi.Panel1.Controls.Add(grpCpuDi);
-
-            var grpExtDi = new GroupBox
-            {
-                Text = "Szyna EX-A2X: Moduł 1 (Wejścia I12 .. I19)",
-                Dock = DockStyle.Fill,
-                ForeColor = Color.FromArgb(0, 220, 255)
-            };
-            flowInputsExt = new FlowLayoutPanel
-            {
-                Dock = DockStyle.Fill,
-                AutoScroll = true,
-                FlowDirection = FlowDirection.TopDown,
-                WrapContents = false
-            };
-            grpExtDi.Controls.Add(flowInputsExt);
-            splitDi.Panel2.Controls.Add(grpExtDi);
-            tabDi.Controls.Add(splitDi);
-
-            // Zakładka 2: Wyjścia cyfrowe (DO / RO)
-            var tabDo = new TabPage("Wyjścia Cyfrowe (DO)");
+            // --- Zakładka 2: Wyjścia cyfrowe (DO) ---
+            tabDo = new TabPage(Localization.T("Hw_Tab_DO"));
             tabDo.BackColor = Color.FromArgb(28, 32, 40);
 
-            var splitDo = new SplitContainer
-            {
-                Dock = DockStyle.Fill,
-                Orientation = Orientation.Vertical,
-                SplitterDistance = 240,
-                BackColor = Color.FromArgb(40, 45, 55)
-            };
+            var pnlDoContainer = new Panel { Dock = DockStyle.Fill, AutoScroll = true };
+            BuildDynamicOutputs(pnlDoContainer);
+            tabDo.Controls.Add(pnlDoContainer);
 
-            var grpCpuDo = new GroupBox
-            {
-                Text = "CPU V350 (Wyjścia O0 .. O7: 6 RO, 2 TO)",
-                Dock = DockStyle.Fill,
-                ForeColor = Color.FromArgb(255, 204, 0)
-            };
-            flowOutputsCpu = new FlowLayoutPanel
-            {
-                Dock = DockStyle.Fill,
-                AutoScroll = true,
-                FlowDirection = FlowDirection.TopDown,
-                WrapContents = false
-            };
-            grpCpuDo.Controls.Add(flowOutputsCpu);
-            splitDo.Panel1.Controls.Add(grpCpuDo);
-
-            var grpExtDo = new GroupBox
-            {
-                Text = "Szyna EX-A2X: Moduł 1 (Wyjścia O8 .. O15)",
-                Dock = DockStyle.Fill,
-                ForeColor = Color.FromArgb(255, 204, 0)
-            };
-            flowOutputsExt = new FlowLayoutPanel
-            {
-                Dock = DockStyle.Fill,
-                AutoScroll = true,
-                FlowDirection = FlowDirection.TopDown,
-                WrapContents = false
-            };
-            grpExtDo.Controls.Add(flowOutputsExt);
-            splitDo.Panel2.Controls.Add(grpExtDo);
-            tabDo.Controls.Add(splitDo);
-
-            // Zakładka 3: Wejścia i Wyjścia Analogowe (AI / AO)
-            var tabAi = new TabPage("Sygnały Analogowe (AI / AO)");
+            // --- Zakładka 3: Wejścia Analogowe (AI) ---
+            tabAi = new TabPage(Localization.T("Hw_Tab_AI"));
             tabAi.BackColor = Color.FromArgb(28, 32, 40);
 
-            var splitAnalog = new SplitContainer
-            {
-                Dock = DockStyle.Fill,
-                Orientation = Orientation.Horizontal,
-                SplitterDistance = 240,
-                BackColor = Color.FromArgb(40, 45, 55)
-            };
-
-            var grpAi = new GroupBox
-            {
-                Text = "Wejścia Analogowe (AI0 .. AI3: Pt100 / 0-10V / 4-20mA)",
-                Dock = DockStyle.Fill,
-                ForeColor = Color.FromArgb(0, 230, 118)
-            };
             panelAnalogInputs = new Panel { Dock = DockStyle.Fill, AutoScroll = true };
-            grpAi.Controls.Add(panelAnalogInputs);
-            splitAnalog.Panel1.Controls.Add(grpAi);
+            BuildDynamicAnalogInputs(panelAnalogInputs);
+            tabAi.Controls.Add(panelAnalogInputs);
 
-            var grpAo = new GroupBox
-            {
-                Text = "Wyjścia Analogowe (AO0 .. AO1: Falowniki VFD1 / VFD2 0-10V)",
-                Dock = DockStyle.Fill,
-                ForeColor = Color.FromArgb(255, 128, 0)
-            };
+            // --- Zakładka 4: Wyjścia Analogowe (AO) ---
+            tabAo = new TabPage(Localization.T("Hw_Tab_AO"));
+            tabAo.BackColor = Color.FromArgb(28, 32, 40);
+
             panelAnalogOutputs = new Panel { Dock = DockStyle.Fill, AutoScroll = true };
-            grpAo.Controls.Add(panelAnalogOutputs);
-            splitAnalog.Panel2.Controls.Add(grpAo);
-            tabAi.Controls.Add(splitAnalog);
+            BuildDynamicAnalogOutputs(panelAnalogOutputs);
+            tabAo.Controls.Add(panelAnalogOutputs);
 
             tabControl.TabPages.Add(tabDi);
             tabControl.TabPages.Add(tabDo);
             tabControl.TabPages.Add(tabAi);
+            tabControl.TabPages.Add(tabAo);
 
             this.Controls.Add(tabControl);
-
-            BuildInputRows();
-            BuildOutputRows();
-            BuildAnalogRows();
         }
 
-        private void BuildInputRows()
+        private void BuildDynamicInputs(Panel container)
         {
-            for (int i = 0; i < 20; i++)
+            var modelSpec = profile.GetCurrentModelSpec();
+            var snapSpec = profile.GetCurrentSnapInSpec();
+            int cpuDiCount = modelSpec.IsModular ? snapSpec.Di : modelSpec.OnboardDi;
+            string cpuTitle = modelSpec.IsModular
+                ? string.Format("{0} [{1}]", modelSpec.ModelName, snapSpec.ModelName)
+                : modelSpec.ModelName;
+
+            int currentInputAddr = 0;
+            int xOffset = 10;
+
+            // 1. Grupa wejść CPU / Snap-in
+            if (cpuDiCount > 0)
             {
-                int inputIdx = i;
-                var rowPanel = new Panel
+                var grpCpu = new GroupBox
                 {
-                    Width = 230,
-                    Height = 28,
-                    Margin = new Padding(2)
+                    Text = string.Format(Localization.T("Hw_Grp_CpuInputs"), cpuTitle),
+                    Location = new Point(xOffset, 10),
+                    Size = new Size(250, Math.Max(200, cpuDiCount * 30 + 35)),
+                    ForeColor = Color.FromArgb(0, 220, 255)
                 };
 
-                // Dioda LED
-                var led = new Label
+                flowInputsCpu = new FlowLayoutPanel
                 {
-                    Width = 14,
-                    Height = 14,
-                    Left = 4,
-                    Top = 7,
-                    BackColor = Color.FromArgb(60, 65, 75),
-                    BorderStyle = BorderStyle.FixedSingle
+                    Dock = DockStyle.Fill,
+                    AutoScroll = true,
+                    FlowDirection = FlowDirection.TopDown,
+                    WrapContents = false
                 };
-                lblInputLeds[inputIdx] = led;
 
-                // Przełącznik hebelkowy bistabilny
-                var chk = new CheckBox
+                for (int i = 0; i < cpuDiCount; i++)
                 {
-                    Text = "I" + inputIdx,
-                    Left = 24,
-                    Top = 4,
-                    Width = 46,
-                    ForeColor = Color.White
-                };
-                chk.CheckedChanged += (s, e) =>
-                {
-                    plc.I[inputIdx] = chk.Checked;
-                    UpdateLedColor(led, chk.Checked, Color.FromArgb(0, 230, 118));
-                };
-                chkInputs[inputIdx] = chk;
-
-                // Przycisk chwilowy (Momentary)
-                var btnMom = new Button
-                {
-                    Text = "PULS",
-                    Left = 72,
-                    Top = 3,
-                    Width = 42,
-                    Height = 22,
-                    FlatStyle = FlatStyle.Flat,
-                    BackColor = Color.FromArgb(50, 55, 68),
-                    ForeColor = Color.FromArgb(200, 220, 240)
-                };
-                btnMom.FlatAppearance.BorderColor = Color.FromArgb(80, 90, 110);
-                btnMom.MouseDown += (s, e) => { plc.I[inputIdx] = true; chk.Checked = true; };
-                btnMom.MouseUp += (s, e) => { plc.I[inputIdx] = false; chk.Checked = false; };
-                btnMomentaryInputs[inputIdx] = btnMom;
-
-                // Opis operandu
-                var lblDesc = new Label
-                {
-                    Text = GetDefaultInputName(inputIdx),
-                    Left = 118,
-                    Top = 7,
-                    Width = 108,
-                    AutoEllipsis = true,
-                    ForeColor = Color.FromArgb(170, 185, 205),
-                    Font = new Font("Segoe UI", 7.5f, FontStyle.Regular)
-                };
-                lblInputTexts[inputIdx] = lblDesc;
-
-                rowPanel.Controls.Add(led);
-                rowPanel.Controls.Add(chk);
-                rowPanel.Controls.Add(btnMom);
-                rowPanel.Controls.Add(lblDesc);
-
-                if (inputIdx < 12)
-                {
-                    flowInputsCpu.Controls.Add(rowPanel);
+                    flowInputsCpu.Controls.Add(CreateInputRow(currentInputAddr++));
                 }
-                else
+                grpCpu.Controls.Add(flowInputsCpu);
+                container.Controls.Add(grpCpu);
+                xOffset += 265;
+            }
+
+            // 2. Grupy wejść modułów rozszerzeń EX-A2X
+            if (profile.EnableExpansionBus && profile.ExpansionSlots != null)
+            {
+                for (int s = 0; s < profile.ExpansionSlots.Count; s++)
                 {
-                    flowInputsExt.Controls.Add(rowPanel);
+                    var slot = profile.ExpansionSlots[s];
+                    var expSpec = profile.GetExpansionSpec(slot.ModuleName);
+                    if (expSpec.Di > 0)
+                    {
+                        int startAddr = currentInputAddr;
+                        int endAddr = startAddr + expSpec.Di - 1;
+
+                        var grpSlot = new GroupBox
+                        {
+                            Text = string.Format(Localization.T("Hw_Grp_ExtSlot"), slot.SlotNumber, expSpec.ModelName + string.Format(" (I{0}..I{1})", startAddr, endAddr)),
+                            Location = new Point(xOffset, 10),
+                            Size = new Size(250, Math.Max(200, expSpec.Di * 30 + 35)),
+                            ForeColor = Color.FromArgb(0, 220, 255)
+                        };
+
+                        var flowExt = new FlowLayoutPanel
+                        {
+                            Dock = DockStyle.Fill,
+                            AutoScroll = true,
+                            FlowDirection = FlowDirection.TopDown,
+                            WrapContents = false
+                        };
+
+                        for (int i = 0; i < expSpec.Di; i++)
+                        {
+                            flowExt.Controls.Add(CreateInputRow(currentInputAddr++));
+                        }
+
+                        grpSlot.Controls.Add(flowExt);
+                        flowInputsExt.Add(flowExt);
+                        container.Controls.Add(grpSlot);
+                        xOffset += 265;
+                    }
                 }
             }
         }
 
-        private void BuildOutputRows()
+        private Panel CreateInputRow(int inputIdx)
         {
-            for (int i = 0; i < 16; i++)
+            var rowPanel = new Panel
             {
-                int outIdx = i;
-                var rowPanel = new Panel
-                {
-                    Width = 230,
-                    Height = 26,
-                    Margin = new Padding(2)
-                };
-
-                // Dioda LED wyjścia
-                var led = new Label
-                {
-                    Width = 14,
-                    Height = 14,
-                    Left = 4,
-                    Top = 6,
-                    BackColor = Color.FromArgb(60, 65, 75),
-                    BorderStyle = BorderStyle.FixedSingle
-                };
-                lblOutputLeds[outIdx] = led;
-
-                // Nazwa wyjścia O0..O15
-                var lblName = new Label
-                {
-                    Text = "O" + outIdx,
-                    Left = 24,
-                    Top = 5,
-                    Width = 35,
-                    ForeColor = Color.FromArgb(255, 204, 0),
-                    Font = new Font("Segoe UI", 8.25f, FontStyle.Bold)
-                };
-
-                // Opis odbiornika
-                var lblDesc = new Label
-                {
-                    Text = GetDefaultOutputName(outIdx),
-                    Left = 62,
-                    Top = 6,
-                    Width = 160,
-                    AutoEllipsis = true,
-                    ForeColor = Color.FromArgb(190, 205, 225),
-                    Font = new Font("Segoe UI", 7.5f, FontStyle.Regular)
-                };
-                lblOutputTexts[outIdx] = lblDesc;
-
-                rowPanel.Controls.Add(led);
-                rowPanel.Controls.Add(lblName);
-                rowPanel.Controls.Add(lblDesc);
-
-                if (outIdx < 8)
-                {
-                    flowOutputsCpu.Controls.Add(rowPanel);
-                }
-                else
-                {
-                    flowOutputsExt.Controls.Add(rowPanel);
-                }
-            }
-        }
-
-        private void BuildAnalogRows()
-        {
-            string[] names = new string[] {
-                "AI0: Pomiar Temp Raw (0..1023)",
-                "AI1: Wilgotność komory 4-20mA (0..1023)",
-                "AI2: Temp Komory Pt100 (0..150°C)",
-                "AI3: Temp Drewna Pt100 (0..150°C)"
+                Width = 230,
+                Height = 28,
+                Margin = new Padding(2)
             };
 
-            int[] maxVals = new int[] { 1023, 1023, 1500, 1500 };
+            // Dioda LED
+            var led = new Label
+            {
+                Width = 14,
+                Height = 14,
+                Left = 4,
+                Top = 7,
+                BackColor = Color.FromArgb(60, 65, 75),
+                BorderStyle = BorderStyle.FixedSingle
+            };
+            lblInputLeds[inputIdx] = led;
 
-            for (int i = 0; i < 4; i++)
+            // Przełącznik bistabilny
+            var chk = new CheckBox
+            {
+                Text = "I" + inputIdx,
+                Left = 24,
+                Top = 4,
+                Width = 50,
+                ForeColor = Color.White
+            };
+            chk.CheckedChanged += (s, e) =>
+            {
+                if (inputIdx < plc.I.Length)
+                {
+                    plc.I[inputIdx] = chk.Checked;
+                }
+                UpdateLedColor(led, chk.Checked, Color.FromArgb(0, 230, 118));
+            };
+            chkInputs[inputIdx] = chk;
+
+            // Przycisk chwilowy
+            var btnMom = new Button
+            {
+                Text = Localization.T("Hw_Btn_Pulse"),
+                Left = 78,
+                Top = 3,
+                Width = 46,
+                Height = 22,
+                FlatStyle = FlatStyle.Flat,
+                BackColor = Color.FromArgb(50, 55, 68),
+                ForeColor = Color.FromArgb(200, 220, 240),
+                Font = new Font("Segoe UI", 7f)
+            };
+            btnMom.FlatAppearance.BorderColor = Color.FromArgb(80, 90, 110);
+            btnMom.MouseDown += (s, e) => { if (inputIdx < plc.I.Length) plc.I[inputIdx] = true; chk.Checked = true; };
+            btnMom.MouseUp += (s, e) => { if (inputIdx < plc.I.Length) plc.I[inputIdx] = false; chk.Checked = false; };
+            btnMomentaryInputs[inputIdx] = btnMom;
+
+            // Opis operandu
+            var lblDesc = new Label
+            {
+                Text = GetDefaultInputName(inputIdx),
+                Left = 128,
+                Top = 7,
+                Width = 100,
+                AutoEllipsis = true,
+                ForeColor = Color.FromArgb(170, 185, 205),
+                Font = new Font("Segoe UI", 7.5f, FontStyle.Regular)
+            };
+            lblInputTexts[inputIdx] = lblDesc;
+
+            rowPanel.Controls.AddRange(new Control[] { led, chk, btnMom, lblDesc });
+            return rowPanel;
+        }
+
+        private void BuildDynamicOutputs(Panel container)
+        {
+            var modelSpec = profile.GetCurrentModelSpec();
+            var snapSpec = profile.GetCurrentSnapInSpec();
+            int cpuDoCount = modelSpec.IsModular ? snapSpec.TotalDo : modelSpec.TotalOnboardDo;
+            int cpuRelayCount = modelSpec.IsModular ? snapSpec.DoRelay : modelSpec.OnboardDoRelay;
+            string cpuTitle = modelSpec.IsModular
+                ? string.Format("{0} [{1}]", modelSpec.ModelName, snapSpec.ModelName)
+                : modelSpec.ModelName;
+
+            int currentOutputAddr = 0;
+            int xOffset = 10;
+
+            // 1. Grupa wyjść CPU
+            if (cpuDoCount > 0)
+            {
+                var grpCpu = new GroupBox
+                {
+                    Text = string.Format(Localization.T("Hw_Grp_CpuOutputs"), cpuTitle),
+                    Location = new Point(xOffset, 10),
+                    Size = new Size(250, Math.Max(200, cpuDoCount * 28 + 35)),
+                    ForeColor = Color.FromArgb(255, 204, 0)
+                };
+
+                flowOutputsCpu = new FlowLayoutPanel
+                {
+                    Dock = DockStyle.Fill,
+                    AutoScroll = true,
+                    FlowDirection = FlowDirection.TopDown,
+                    WrapContents = false
+                };
+
+                for (int i = 0; i < cpuDoCount; i++)
+                {
+                    bool isRelay = (i < cpuRelayCount);
+                    flowOutputsCpu.Controls.Add(CreateOutputRow(currentOutputAddr++, isRelay));
+                }
+
+                grpCpu.Controls.Add(flowOutputsCpu);
+                container.Controls.Add(grpCpu);
+                xOffset += 265;
+            }
+
+            // 2. Grupy wyjść modułów rozszerzeń EX-A2X
+            if (profile.EnableExpansionBus && profile.ExpansionSlots != null)
+            {
+                for (int s = 0; s < profile.ExpansionSlots.Count; s++)
+                {
+                    var slot = profile.ExpansionSlots[s];
+                    var expSpec = profile.GetExpansionSpec(slot.ModuleName);
+                    if (expSpec.TotalDo > 0)
+                    {
+                        int startAddr = currentOutputAddr;
+                        int endAddr = startAddr + expSpec.TotalDo - 1;
+
+                        var grpSlot = new GroupBox
+                        {
+                            Text = string.Format(Localization.T("Hw_Grp_ExtSlot"), slot.SlotNumber, expSpec.ModelName + string.Format(" (O{0}..O{1})", startAddr, endAddr)),
+                            Location = new Point(xOffset, 10),
+                            Size = new Size(250, Math.Max(200, expSpec.TotalDo * 28 + 35)),
+                            ForeColor = Color.FromArgb(255, 204, 0)
+                        };
+
+                        var flowExt = new FlowLayoutPanel
+                        {
+                            Dock = DockStyle.Fill,
+                            AutoScroll = true,
+                            FlowDirection = FlowDirection.TopDown,
+                            WrapContents = false
+                        };
+
+                        for (int i = 0; i < expSpec.TotalDo; i++)
+                        {
+                            bool isRelay = (i < expSpec.DoRelay);
+                            flowExt.Controls.Add(CreateOutputRow(currentOutputAddr++, isRelay));
+                        }
+
+                        grpSlot.Controls.Add(flowExt);
+                        flowOutputsExt.Add(flowExt);
+                        container.Controls.Add(grpSlot);
+                        xOffset += 265;
+                    }
+                }
+            }
+        }
+
+        private Panel CreateOutputRow(int outIdx, bool isRelay)
+        {
+            var rowPanel = new Panel
+            {
+                Width = 230,
+                Height = 26,
+                Margin = new Padding(2)
+            };
+
+            // Dioda LED wyjścia
+            var led = new Label
+            {
+                Width = 14,
+                Height = 14,
+                Left = 4,
+                Top = 6,
+                BackColor = Color.FromArgb(60, 65, 75),
+                BorderStyle = BorderStyle.FixedSingle
+            };
+            lblOutputLeds[outIdx] = led;
+
+            // Nazwa O0..O15
+            var lblName = new Label
+            {
+                Text = "O" + outIdx,
+                Left = 24,
+                Top = 5,
+                Width = 40,
+                ForeColor = Color.White,
+                Font = new Font("Segoe UI", 8.25f, FontStyle.Bold)
+            };
+
+            // Typ wyjścia (RO / TO)
+            var lblType = new Label
+            {
+                Text = isRelay ? "RO" : "TO",
+                Left = 66,
+                Top = 6,
+                Width = 26,
+                ForeColor = isRelay ? Color.FromArgb(255, 215, 64) : Color.FromArgb(120, 200, 255),
+                Font = new Font("Segoe UI", 7.5f)
+            };
+
+            // Opis z projektu
+            var lblDesc = new Label
+            {
+                Text = GetDefaultOutputName(outIdx),
+                Left = 96,
+                Top = 6,
+                Width = 130,
+                AutoEllipsis = true,
+                ForeColor = Color.FromArgb(170, 185, 205),
+                Font = new Font("Segoe UI", 7.5f, FontStyle.Regular)
+            };
+            lblOutputTexts[outIdx] = lblDesc;
+
+            rowPanel.Controls.AddRange(new Control[] { led, lblName, lblType, lblDesc });
+            return rowPanel;
+        }
+
+        private void BuildDynamicAnalogInputs(Panel container)
+        {
+            int totalAi = profile.GetTotalAi();
+            int yPos = 15;
+
+            for (int i = 0; i < Math.Min(totalAi, 16); i++)
             {
                 int aiIdx = i;
-                int y = 10 + i * 52;
+                int miRegister = 200 + aiIdx;
 
-                var lbl = new Label
+                var lblTitle = new Label
                 {
-                    Text = names[aiIdx],
-                    Left = 10,
-                    Top = y,
-                    Width = 240,
-                    ForeColor = Color.FromArgb(220, 230, 240)
+                    Text = string.Format("AI{0} / MI{1} [{2}]", aiIdx, miRegister, GetDefaultAiName(aiIdx)),
+                    Left = 20,
+                    Top = yPos,
+                    Width = 400,
+                    ForeColor = Color.FromArgb(0, 230, 118),
+                    Font = new Font("Segoe UI", 8.5f, FontStyle.Bold)
                 };
-                lblAnalogLabels[aiIdx] = lbl;
+                lblAnalogLabels[aiIdx] = lblTitle;
 
                 var track = new TrackBar
                 {
-                    Left = 10,
-                    Top = y + 20,
-                    Width = 180,
-                    Height = 28,
+                    Left = 20,
+                    Top = yPos + 22,
+                    Width = 320,
                     Minimum = 0,
-                    Maximum = maxVals[aiIdx],
-                    Value = aiIdx >= 2 ? 220 : 100, // Domyślnie 22.0°C dla temperatur
-                    TickStyle = TickStyle.None
+                    Maximum = 1023,
+                    Value = (aiIdx < 2) ? 220 : 0, // Domyślna temperatura 22.0 C
+                    TickFrequency = 100,
+                    SmallChange = 1,
+                    LargeChange = 50
                 };
+                trackAnalogs[aiIdx] = track;
 
                 var num = new NumericUpDown
                 {
-                    Left = 196,
-                    Top = y + 20,
-                    Width = 65,
+                    Left = 350,
+                    Top = yPos + 24,
+                    Width = 80,
                     Minimum = 0,
-                    Maximum = maxVals[aiIdx],
+                    Maximum = 4095,
                     Value = track.Value,
-                    BackColor = Color.FromArgb(40, 45, 55),
+                    BackColor = Color.FromArgb(40, 46, 58),
                     ForeColor = Color.White
+                };
+                numAnalogs[aiIdx] = num;
+
+                var lblVal = new Label
+                {
+                    Left = 440,
+                    Top = yPos + 26,
+                    Width = 140,
+                    ForeColor = Color.FromArgb(200, 220, 240)
+                };
+
+                Action updateAi = () =>
+                {
+                    short rawVal = (short)num.Value;
+                    if (miRegister < plc.MI.Length) plc.MI[miRegister] = rawVal;
+                    double volts = (rawVal / 1023.0) * 10.0;
+                    double tempC = rawVal / 10.0;
+                    lblVal.Text = string.Format("{0:F1} V  ({1:F1} °C)", volts, tempC);
                 };
 
                 track.ValueChanged += (s, e) =>
                 {
                     num.Value = track.Value;
-                    UpdatePlcAnalogValue(aiIdx, track.Value);
+                    updateAi();
                 };
                 num.ValueChanged += (s, e) =>
                 {
-                    track.Value = (int)num.Value;
-                    UpdatePlcAnalogValue(aiIdx, (int)num.Value);
+                    if (num.Value <= track.Maximum) track.Value = (int)num.Value;
+                    updateAi();
                 };
 
-                trackAnalogs[aiIdx] = track;
-                numAnalogs[aiIdx] = num;
+                updateAi();
 
-                panelAnalogInputs.Controls.Add(lbl);
-                panelAnalogInputs.Controls.Add(track);
-                panelAnalogInputs.Controls.Add(num);
-            }
-
-            // Wyjścia analogowe AO0 i AO1
-            for (int i = 0; i < 2; i++)
-            {
-                int aoIdx = i;
-                int y = 10 + i * 45;
-
-                var lblDesc = new Label
-                {
-                    Text = string.Format("AO{0}: Falownik VFD {1} (0..10V / 0..50Hz)", aoIdx, aoIdx + 1),
-                    Left = 10,
-                    Top = y,
-                    Width = 230,
-                    ForeColor = Color.FromArgb(255, 150, 50)
-                };
-
-                var bar = new ProgressBar
-                {
-                    Left = 10,
-                    Top = y + 20,
-                    Width = 170,
-                    Height = 16,
-                    Minimum = 0,
-                    Maximum = 100,
-                    Value = 0
-                };
-                barAoVoltages[aoIdx] = bar;
-
-                var lblVal = new Label
-                {
-                    Text = "0.00 V (0.0 Hz)",
-                    Left = 185,
-                    Top = y + 19,
-                    Width = 95,
-                    ForeColor = Color.Yellow,
-                    Font = new Font("Consolas", 8.25f, FontStyle.Bold)
-                };
-                lblAoVoltages[aoIdx] = lblVal;
-
-                panelAnalogOutputs.Controls.Add(lblDesc);
-                panelAnalogOutputs.Controls.Add(bar);
-                panelAnalogOutputs.Controls.Add(lblVal);
+                container.Controls.AddRange(new Control[] { lblTitle, track, num, lblVal });
+                yPos += 68;
             }
         }
 
-        private void UpdatePlcAnalogValue(int idx, int val)
+        private void BuildDynamicAnalogOutputs(Panel container)
         {
-            if (idx == 0) plc.MI[0] = (short)val;
-            else if (idx == 1) plc.MI[1] = (short)val;
-            else if (idx == 2) plc.MI[2] = (short)val;
-            else if (idx == 3) plc.MI[3] = (short)val;
+            int totalAo = profile.GetTotalAo();
+            int yPos = 15;
+
+            for (int i = 0; i < Math.Min(totalAo, 8); i++)
+            {
+                int aoIdx = i;
+                int miRegister = 280 + aoIdx;
+
+                var lblTitle = new Label
+                {
+                    Text = string.Format("AO{0} / MI{1} [{2}]", aoIdx, miRegister, (aoIdx == 0 ? "VFD1 Frequency" : "VFD2 Frequency")),
+                    Left = 20,
+                    Top = yPos,
+                    Width = 400,
+                    ForeColor = Color.FromArgb(255, 128, 0),
+                    Font = new Font("Segoe UI", 8.5f, FontStyle.Bold)
+                };
+
+                var pbar = new ProgressBar
+                {
+                    Left = 20,
+                    Top = yPos + 22,
+                    Width = 320,
+                    Height = 20,
+                    Minimum = 0,
+                    Maximum = 1000,
+                    Value = 0
+                };
+                barAoVoltages[aoIdx] = pbar;
+
+                var lblVolt = new Label
+                {
+                    Text = "0.00 V (0.0 Hz)",
+                    Left = 350,
+                    Top = yPos + 24,
+                    Width = 160,
+                    ForeColor = Color.White
+                };
+                lblAoVoltages[aoIdx] = lblVolt;
+
+                container.Controls.AddRange(new Control[] { lblTitle, pbar, lblVolt });
+                yPos += 58;
+            }
         }
 
         private void OnPlcScanCompleted()
         {
-            if (this.InvokeRequired)
+            if (this.IsDisposed || !this.IsHandleCreated) return;
+
+            try
             {
-                this.BeginInvoke(new Action(SyncUiWithPlc));
+                this.BeginInvoke(new Action(() =>
+                {
+                    // Aktualizacja LED wyjść cyfrowych
+                    int totalDo = profile.GetTotalDo();
+                    for (int i = 0; i < totalDo && i < lblOutputLeds.Length; i++)
+                    {
+                        if (lblOutputLeds[i] != null && i < plc.O.Length)
+                        {
+                            UpdateLedColor(lblOutputLeds[i], plc.O[i], Color.FromArgb(255, 140, 0));
+                        }
+                    }
+
+                    // Aktualizacja wyjść analogowych
+                    int totalAo = profile.GetTotalAo();
+                    for (int i = 0; i < totalAo && i < barAoVoltages.Length; i++)
+                    {
+                        if (barAoVoltages[i] != null && i < plc.AO_Volts.Length)
+                        {
+                            double v = plc.AO_Volts[i];
+                            int pct = (int)Math.Min(1000, Math.Max(0, (v / 10.0) * 1000));
+                            barAoVoltages[i].Value = pct;
+                            if (lblAoVoltages[i] != null)
+                            {
+                                lblAoVoltages[i].Text = string.Format("{0:F2} V ({1:F1} Hz)", v, v * 5.0);
+                            }
+                        }
+                    }
+                }));
             }
-            else
-            {
-                SyncUiWithPlc();
-            }
+            catch { }
         }
 
-        private void SyncUiWithPlc()
+        private void UpdateLedColor(Label led, bool state, Color onColor)
         {
-            // Aktualizacja wyjść cyfrowych DO
-            for (int i = 0; i < 16; i++)
-            {
-                bool state = plc.O[i];
-                UpdateLedColor(lblOutputLeds[i], state, Color.FromArgb(255, 204, 0));
-            }
-
-            // Aktualizacja wejść cyfrowych (gdy zmienione z zewnątrz / programu)
-            for (int i = 0; i < 20; i++)
-            {
-                bool state = plc.I[i];
-                UpdateLedColor(lblInputLeds[i], state, Color.FromArgb(0, 230, 118));
-            }
-
-            // Aktualizacja wyjść analogowych AO
-            for (int i = 0; i < 2; i++)
-            {
-                double volts = plc.AO_Volts[i];
-                double hz = volts * 5.0; // 0..10V = 0..50Hz
-                barAoVoltages[i].Value = Math.Min(100, (int)(volts * 10.0));
-                lblAoVoltages[i].Text = string.Format("{0:0.00} V ({1:0.0} Hz)", volts, hz);
-            }
+            led.BackColor = state ? onColor : Color.FromArgb(60, 65, 75);
         }
 
         public void RefreshOperandLabels()
         {
+            ApplyProjectDescriptions();
+        }
+
+        public void ApplyProjectDescriptions()
+        {
             if (plc.Project == null) return;
 
-            // Odśwież etykiety wejść I0..I19
-            for (int i = 0; i < 20; i++)
+            int totalDi = profile.GetTotalDi();
+            for (int i = 0; i < totalDi && i < lblInputTexts.Length; i++)
             {
+                if (lblInputTexts[i] == null) continue;
                 string key = "I" + i;
-                if (plc.Project.OperandDescriptions.ContainsKey(key))
+                string desc;
+                if (plc.Project.OperandDescriptions.TryGetValue(key, out desc))
                 {
-                    lblInputTexts[i].Text = plc.Project.OperandDescriptions[key];
+                    lblInputTexts[i].Text = desc;
                 }
             }
 
-            // Odśwież etykiety wyjść O0..O15
-            for (int i = 0; i < 16; i++)
+            int totalDo = profile.GetTotalDo();
+            for (int i = 0; i < totalDo && i < lblOutputTexts.Length; i++)
             {
+                if (lblOutputTexts[i] == null) continue;
                 string key = "O" + i;
-                if (plc.Project.OperandDescriptions.ContainsKey(key))
+                string desc;
+                if (plc.Project.OperandDescriptions.TryGetValue(key, out desc))
                 {
-                    lblOutputTexts[i].Text = plc.Project.OperandDescriptions[key];
+                    lblOutputTexts[i].Text = desc;
                 }
             }
         }
 
-        private void UpdateLedColor(Label led, bool state, Color activeColor)
+        private void ApplyLanguage()
         {
-            led.BackColor = state ? activeColor : Color.FromArgb(50, 55, 65);
-        }
+            tabDi.Text = Localization.T("Hw_Tab_DI");
+            tabDo.Text = Localization.T("Hw_Tab_DO");
+            tabAi.Text = Localization.T("Hw_Tab_AI");
+            tabAo.Text = Localization.T("Hw_Tab_AO");
 
-        private string GetDefaultInputName(int idx)
-        {
-            switch (idx)
+            for (int i = 0; i < btnMomentaryInputs.Length; i++)
             {
-                case 0: return "Went 1 Termik";
-                case 1: return "Went 2 Termik";
-                case 2: return "Went 3 Termik";
-                case 3: return "Went 4 Termik";
-                case 4: return "Went 5 Termik";
-                case 5: return "Went 6 Termik";
-                case 6: return "E-Stop (Bezpiecz)";
-                case 7: return "STB 95°C Termostat";
-                case 8: return "STOP Przycisk";
-                case 9: return "PAUZA Przycisk";
-                case 10: return "START Przycisk";
-                case 11: return "Krańcówka Drzwi";
-                case 12: return "Presostaty Rekup";
-                case 13: return "Gotowość VFD LS";
-                case 14: return "Prąd Grzałek 1-3";
-                case 15: return "Prąd Grzałek 4-6";
-                case 16: return "Asymetria Faz CKF";
-                case 17: return "Przełącznik Went";
-                default: return "Wejście DI " + idx;
+                if (btnMomentaryInputs[i] != null)
+                {
+                    btnMomentaryInputs[i].Text = Localization.T("Hw_Btn_Pulse");
+                }
             }
         }
 
-        private string GetDefaultOutputName(int idx)
+        private string GetDefaultInputName(int i)
         {
-            switch (idx)
+            switch (i)
             {
-                case 0: return "Lampka PRACA";
-                case 1: return "Lampka AWARIA";
-                case 2: return "Syrena Alarmowa";
-                case 3: return "Stycznik Went 1-3";
-                case 4: return "Stycznik Went 4-6";
-                case 5: return "Zezwolenie VFD";
-                case 6: return "VFD 1 Praca";
-                case 7: return "VFD 2 Praca";
-                case 8: return "Stycznik Grzałek K1";
-                case 9: return "Sekcja SSR 1";
-                case 10: return "Sekcja SSR 2";
-                case 11: return "Sekcja SSR 3";
-                case 12: return "Sekcja SSR 4";
-                case 13: return "Sekcja SSR 5";
-                case 14: return "Sekcja SSR 6";
-                case 15: return "Klapa Rekuperatora";
-                default: return "Wyjście DO " + idx;
+                case 0: return "Przycisk START";
+                case 1: return "Przycisk STOP";
+                case 2: return "Wyłącznik Bezpieczeństwa";
+                case 3: return "Drzwi Komory Otwarte";
+                case 4: return "Czujnik Ciśnienia SP";
+                case 5: return "Presostat Kompresora";
+                case 6: return "Termik Wentylatora 1";
+                case 7: return "Termik Wentylatora 2";
+                case 8: return "Poziom Wody w Zbiorniku";
+                case 9: return "Brak Przepływu Cieczy";
+                case 10: return "Potwierdzenie Alarmu";
+                case 11: return "Przełącznik Tryb Ręczny";
+                case 12: return "Krańcówka Zaworu Z1";
+                case 13: return "Krańcówka Zaworu Z2";
+                case 14: return "Czujnik Dymu Komory";
+                case 15: return "Rezerwa DI 15";
+                default: return "Wejście I" + i;
+            }
+        }
+
+        private string GetDefaultOutputName(int i)
+        {
+            switch (i)
+            {
+                case 0: return "Stycznik Grzałek 1";
+                case 1: return "Stycznik Grzałek 2";
+                case 2: return "Zawór Chłodzenia Z1";
+                case 3: return "Zawór Zraszania Z2";
+                case 4: return "Wentylator Obiegowy 1";
+                case 5: return "Wentylator Obiegowy 2";
+                case 6: return "Sygnalizator Dźwiękowy";
+                case 7: return "Lampa Sygnalizacyjna Czerwona";
+                case 8: return "Lampa Zielona (Praca)";
+                case 9: return "Pompa Wymuszonego Obiegu";
+                case 10: return "Klapa Odpowietrzająca";
+                case 11: return "Oświetlenie Wnętrza";
+                case 12: return "Zezwolenie Pracy Palnika";
+                case 13: return "Agregat Osuszający";
+                case 14: return "Rezerwa RO 14";
+                case 15: return "Rezerwa RO 15";
+                default: return "Wyjście O" + i;
+            }
+        }
+
+        private string GetDefaultAiName(int i)
+        {
+            switch (i)
+            {
+                case 0: return "Temperatura Wnętrza Pt100";
+                case 1: return "Wilgotność Względna 0-10V";
+                case 2: return "Ciśnienie Komory 4-20mA";
+                case 3: return "Przepływ Powietrza";
+                default: return "Wejście Analogowe AI" + i;
             }
         }
     }

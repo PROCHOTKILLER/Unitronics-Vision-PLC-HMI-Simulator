@@ -248,8 +248,8 @@ namespace UnitronicsV350Simulator
             // 2. Identyfikacja sterownika (ID, _ID, UG)
             else if (cmdBody.StartsWith("ID") || cmdBody.StartsWith("_ID"))
             {
-                // Format odpowiedzi OPLC V350-35-RA22, OS: 04.04.12
-                string payload = "V350-35-RA22,4.04(12)";
+                // Format odpowiedzi OPLC, np. V350-35-RA22,4.04(12) lub V570-57-T20B,4.04(12)
+                string payload = (plc != null && plc.Profile != null) ? plc.Profile.GetPcomIdString() : "V350-35-RA22,4.04(12)";
                 return FormatPcomAsciiResponse(unitId, "ID" + payload);
             }
             else if (cmdBody.StartsWith("UG"))

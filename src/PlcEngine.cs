@@ -98,6 +98,7 @@ namespace UnitronicsV350Simulator
         public string ProjectName = "";
         public string FilePath = "";
         public string PlcModel = "V350-35-RA22";
+        public string HardwareTarget { get { return PlcModel; } set { PlcModel = value; } }
         public List<string> Modules = new List<string>();
         public Dictionary<int, Subroutine> Subroutines = new Dictionary<int, Subroutine>();
         public Dictionary<int, HmiPageDef> Pages = new Dictionary<int, HmiPageDef>();
@@ -145,9 +146,21 @@ namespace UnitronicsV350Simulator
         public event Action OnScanCompleted;
         public event Action<string> OnLogMessage;
 
-        public PlcEngine()
+        public HardwareProfile Profile { get; set; }
+
+        public PlcEngine(HardwareProfile profile = null)
         {
+            Profile = profile ?? (SimulatorConfig.Current != null && SimulatorConfig.Current.HardwareProfile != null ? SimulatorConfig.Current.HardwareProfile : HardwareProfile.CreateDefaultProfile());
             ResetMemory();
+        }
+
+        public void SetProfile(HardwareProfile newProfile)
+        {
+            if (newProfile != null)
+            {
+                Profile = newProfile;
+                Log(string.Format("Zaktualizowano profil sprzetowy PLC: {0}", Profile.GetModelFullName()));
+            }
         }
 
         public void ResetMemory()

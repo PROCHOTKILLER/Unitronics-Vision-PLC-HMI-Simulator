@@ -6,7 +6,7 @@ Built in C# and .NET Framework 4.0 (x86 architecture compatible with Unitronics 
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Platform](https://img.shields.io/badge/platform-Windows%20x86%20%7C%20x64-lightgrey.svg)
-![Version](https://img.shields.io/badge/version-v0.0.3-green.svg)
+![Version](https://img.shields.io/badge/version-v0.0.4-green.svg)
 ![Target](https://img.shields.io/badge/target-Unitronics%20Vision%20Series-brightgreen.svg)
 
 ---
@@ -20,15 +20,24 @@ This simulator is designed to emulate the complete runtime environment for all p
 | **Vision 130** | V130-33-xxx | 2.4" Monochrome Graphic STN, 128x64 px, 20-key keypad | Supported (Keypad & IO) |
 | **Vision 350** | V350-35-xxx / V350-J | 3.5" Color TFT QVGA, 320x240 px, resistive touchscreen | **Fully Supported (Default)** |
 | **Vision 430** | V430-J-xxx | 4.3" Color TFT WQVGA, 480x272 px, resistive touchscreen | Supported |
-| **Vision 570** | V570-57-xxx | 5.7" Color TFT QVGA, 320x240 px, resistive touchscreen | Supported |
+| **Vision 570** | V570-57-xxx | 5.7" Color TFT QVGA, 320x240 px, resistive touchscreen | Supported (Snap-in slots) |
 | **Vision 700** | V700-T20BJ | 7.0" Color TFT WVGA, 800x480 px, resistive touchscreen | Supported |
-| **Vision 1040** | V1040-20-xxx | 10.4" Color TFT SVGA, 800x600 px, 9 programmable function keys | Supported |
+| **Vision 1040** | V1040-20-xxx | 10.4" Color TFT SVGA, 800x600 px, 9 programmable function keys | Supported (800x600 TFT) |
 | **Vision 1210** | V1210-T20BJ | 12.1" Color TFT XGA, 800x600 px, resistive touchscreen | Supported |
 
 ---
 
 ## 🚀 Key Features
 
+- **Startup Hardware Configuration Wizard**:
+  - Modal startup dialog allows interactive selection of PLC family and model, Snap-In modules (for modular series V570/V1040/V1210), and up to 8 EX-A2X expansion slots.
+  - Strict hardware enforcement: screen resolution, touchscreen capability, and PCOM model identification.
+  - Quick presets for drying kilns (e.g. Komora 9: V350 + IO-DI8-RO8) and factory default standalone models.
+- **Bilingual Interface (English & Polish)**:
+  - Full runtime bilingual support across all menus, dialogs, and I/O status labels with instant on-the-fly language switching.
+- **Configurable Logging Engine**:
+  - Main Settings dialog with toggle, 5 verbosity levels (Error, Warn, Info, Debug, Trace), PCOM packet / Touch event filters, and log viewer/clearing tools.
+  - Persistent state saved to `virtualplc_config.json`.
 - **PCOM Protocol Server (TCP/IP)**:
   - Full bidirectional support for **PCOM ASCII** (frames starting with `_` or `/`) and **PCOM Binary** (primitives `0x65`, `0x47`, `0x42`, `0x44`, `0x50`, `0x52`).
   - Implements System Integer inspection: responds to `SI 307` model identifier query (returning `/A00GS0000FB\r`), operand read/write, RTC, and Project Download frames without `5Automation error` in `UnVsCon2.dll`.

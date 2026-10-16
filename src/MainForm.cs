@@ -14,6 +14,7 @@ namespace UnitronicsV350Simulator
         private HmiRenderer hmiRenderer;
         private PcomServer pcomServer;
         private HardwarePanel hardwarePanel;
+        private SimulatorConfig config;
 
         // Wątek pętli skanowania PLC
         private Thread scanThread;
@@ -22,25 +23,96 @@ namespace UnitronicsV350Simulator
         // Timer odświeżania GUI (30 FPS)
         private System.Windows.Forms.Timer uiTimer;
 
-        // Kontrolki panelu czołowego V350
+        // Kontrolki panelu czołowego OPLC
         private PictureBox picScreen;
         private Label lblPwrLed;
         private Label lblRunLed;
         private Label lblErrLed;
+        private Label lblLogoModel;
         private Label lblScreenCaption;
+        private Label lblTouchHint;
 
-        // Kontrolki paska stanu i menu
+        // Kontrolki paska menu
+        private MenuStrip menuStrip;
+        private ToolStripMenuItem mnuFile;
+        private ToolStripMenuItem mnuLoad;
+        private ToolStripMenuItem mnuQuickLoad;
+        private ToolStripMenuItem mnuClear;
+        private ToolStripMenuItem mnuExit;
+
+        private ToolStripMenuItem mnuPlc;
+        private ToolStripMenuItem mnuRun;
+        private ToolStripMenuItem mnuStop;
+        private ToolStripMenuItem mnuReset;
+
+        private ToolStripMenuItem mnuHardware;
+        private ToolStripMenuItem mnuHardwareConfig;
+        private ToolStripMenuItem mnuPresetKomora9;
+        private ToolStripMenuItem mnuPresetV350;
+        private ToolStripMenuItem mnuPresetV570;
+        private ToolStripMenuItem mnuPresetV1040;
+
+        private ToolStripMenuItem mnuSettings;
+        private ToolStripMenuItem mnuSettingsGeneral;
+        private ToolStripMenuItem mnuLanguage;
+        private ToolStripMenuItem mnuLangPl;
+        private ToolStripMenuItem mnuLangEn;
+
+        private ToolStripMenuItem mnuLogging;
+        private ToolStripMenuItem mnuLogEnabled;
+        private ToolStripMenuItem mnuLogLevel;
+        private ToolStripMenuItem mnuLogLevelError;
+        private ToolStripMenuItem mnuLogLevelWarn;
+        private ToolStripMenuItem mnuLogLevelInfo;
+        private ToolStripMenuItem mnuLogLevelDebug;
+        private ToolStripMenuItem mnuLogLevelTrace;
+        private ToolStripMenuItem mnuOpenLogFile;
+        private ToolStripMenuItem mnuClearLogFile;
+
+        private ToolStripMenuItem mnuPcom;
+        private ToolStripMenuItem mnuPcomStart;
+        private ToolStripMenuItem mnuPcomStop;
+
+        private ToolStripMenuItem mnuHelp;
+        private ToolStripMenuItem mnuOpenLog;
+        private ToolStripMenuItem mnuInfo;
+        private ToolStripMenuItem mnuAbout;
+
+        // Kontrolki paska narzędziowego
+        private ToolStrip toolStrip;
+        private ToolStripButton btnToolbarLoad;
+        private ToolStripButton btnToolbarQuick;
+        private ToolStripButton btnToolbarClear;
+        private ToolStripButton btnToolbarRun;
+        private ToolStripButton btnToolbarStop;
+        private ToolStripButton btnToolbarReset;
+        private ToolStripButton btnToolbarHw;
+        private ToolStripButton btnToolbarSettings;
+
+        // Kontrolki paska stanu
+        private StatusStrip statusStrip;
         private ToolStripStatusLabel statusPlcState;
         private ToolStripStatusLabel statusScanTime;
-        private ToolStripStatusLabel statusProjectName;
         private ToolStripStatusLabel statusPcom;
         private ToolStripStatusLabel statusActivePage;
+        private ToolStripStatusLabel statusHwProfile;
+        private ToolStripStatusLabel statusProjectName;
 
         // Kontrolki zakładek
         private TabControl tabControlMain;
+        private TabPage tabIo;
+        private TabPage tabWatch;
+        private TabPage tabLadder;
+        private TabPage tabHmi;
+        private TabPage tabLog;
+
         private DataGridView dgvWatch;
         private ComboBox cboWatchFilter;
         private TextBox txtWatchSearch;
+        private Label lblWatchFilt;
+        private Label lblWatchSearch;
+        private Button btnWatchForce;
+
         private TreeView tvSubroutines;
         private RichTextBox rtbLadderView;
         private ListView lvHmiPages;
@@ -57,19 +129,24 @@ namespace UnitronicsV350Simulator
         private List<WatchItem> allWatchItems = new List<WatchItem>();
         private List<WatchItem> filteredWatchItems = new List<WatchItem>();
 
-        public MainForm()
+        public MainForm(SimulatorConfig cfg = null)
         {
-            plc = new PlcEngine();
+            config = cfg ?? SimulatorConfig.Current;
+            plc = new PlcEngine(config.Profile);
             hmiRenderer = new HmiRenderer(plc);
             pcomServer = new PcomServer(plc);
             hardwarePanel = new HardwarePanel(plc);
 
             InitializeComponent();
+            ApplyLanguage();
+
+            Localization.OnLanguageChanged += ApplyLanguage;
 
             plc.OnLogMessage += HandlePlcLog;
 
-            // Start serwera PCOM TCP na domyślnym porcie 20256
-            pcomServer.Start(PcomServer.DEFAULT_PORT);
+            // Start serwera PCOM TCP na skonfigurowanym porcie
+            int port = (config.PcomPort > 0) ? config.PcomPort : PcomServer.DEFAULT_PORT;
+            pcomServer.Start(port);
             pcomServer.OnProjectDownloaded += (projPath) =>
             {
                 try
@@ -97,59 +174,150 @@ namespace UnitronicsV350Simulator
 
             this.FormClosing += MainForm_FormClosing;
 
-            plc.Log("Inicjalizacja symulatora V350-35-RA22 zakończona.");
+            string hwName = config.Profile != null ? config.Profile.GetModelFullName() : "V350";
+            plc.Log(string.Format("Inicjalizacja symulatora {0} zakonczona.", hwName));
             plc.Log("Sterownik jest w czystym stanie fabrycznym (OPLC Standby).");
-            plc.Log("Użyj przycisku 'Wgraj projekt VisiLogic' lub połącz się przez port TCP 20256.");
+            plc.Log(string.Format("Uzyj przycisku 'Wgraj projekt VisiLogic' lub polacz sie przez port TCP {0}.", port));
         }
 
         private void InitializeComponent()
         {
-            this.Text = "Symulator PLC/HMI Unitronics Vision V350-35-RA22 v0.0.3 [Portable]";
-            this.Size = new Size(1300, 840);
+            this.Size = new Size(1340, 860);
             this.MinimumSize = new Size(1100, 720);
             this.StartPosition = FormStartPosition.CenterScreen;
             this.BackColor = Color.FromArgb(24, 28, 36);
             this.ForeColor = Color.White;
             this.Font = new Font("Segoe UI", 9f, FontStyle.Regular);
 
-            // Główne Menu
-            var menuStrip = new MenuStrip
+            // ==========================================
+            // GŁÓWNE MENU APLIKACJI (MenuStrip)
+            // ==========================================
+            menuStrip = new MenuStrip
             {
                 BackColor = Color.FromArgb(32, 38, 48),
                 ForeColor = Color.White,
                 RenderMode = ToolStripRenderMode.System
             };
 
-            var mnuFile = new ToolStripMenuItem("Plik");
-            var mnuLoad = new ToolStripMenuItem("Wgraj projekt VisiLogic (*.vlp, *.vlx, *.udb)...", null, (s, e) => OpenProjectDialog());
-            var mnuQuickLoad = new ToolStripMenuItem("Wgraj Komora_9_PLC.vlp (szybki wybór z Pulpitu)", null, (s, e) => QuickLoadKomora9());
-            var mnuClear = new ToolStripMenuItem("Wyczyść program (Czysty OPLC - stan fabryczny)", null, (s, e) => ClearProject());
-            var mnuExit = new ToolStripMenuItem("Zakończ", null, (s, e) => this.Close());
+            // 1. Menu: Plik / File
+            mnuFile = new ToolStripMenuItem("Plik");
+            mnuLoad = new ToolStripMenuItem("Wgraj projekt VisiLogic (*.vlp, *.vlx, *.udb)...", null, (s, e) => OpenProjectDialog());
+            mnuQuickLoad = new ToolStripMenuItem("Wgraj Komora_9_PLC.vlp (szybki wybór z Pulpitu)", null, (s, e) => QuickLoadKomora9());
+            mnuClear = new ToolStripMenuItem("Wyczyść program (Czysty OPLC - stan fabryczny)", null, (s, e) => ClearProject());
+            mnuExit = new ToolStripMenuItem("Zakończ", null, (s, e) => this.Close());
             mnuFile.DropDownItems.AddRange(new ToolStripItem[] { mnuLoad, mnuQuickLoad, new ToolStripSeparator(), mnuClear, new ToolStripSeparator(), mnuExit });
 
-            var mnuPlc = new ToolStripMenuItem("Sterowanie PLC");
-            var mnuRun = new ToolStripMenuItem("START / RUN (F5)", null, (s, e) => StartPlc());
-            var mnuStop = new ToolStripMenuItem("STOP (F6)", null, (s, e) => StopPlc());
-            var mnuReset = new ToolStripMenuItem("RESET (F7)", null, (s, e) => ResetPlc());
+            // 2. Menu: Sterowanie PLC / PLC Control
+            mnuPlc = new ToolStripMenuItem("Sterowanie PLC");
+            mnuRun = new ToolStripMenuItem("START / RUN (F5)", null, (s, e) => StartPlc());
+            mnuStop = new ToolStripMenuItem("STOP (F6)", null, (s, e) => StopPlc());
+            mnuReset = new ToolStripMenuItem("RESET (F7)", null, (s, e) => ResetPlc());
             mnuPlc.DropDownItems.AddRange(new ToolStripItem[] { mnuRun, mnuStop, mnuReset });
 
-            var mnuPcom = new ToolStripMenuItem("Serwer PCOM TCP");
-            var mnuPcomStart = new ToolStripMenuItem("Uruchom serwer PCOM (:20256)", null, (s, e) => pcomServer.Start(PcomServer.DEFAULT_PORT));
-            var mnuPcomStop = new ToolStripMenuItem("Zatrzymaj serwer PCOM", null, (s, e) => pcomServer.Stop());
+            // 3. Menu: Sprzęt / Hardware
+            mnuHardware = new ToolStripMenuItem("Sprzęt");
+            mnuHardwareConfig = new ToolStripMenuItem("Konfiguracja sprzętowa sterownika i I/O...", null, (s, e) => OpenHardwareConfigDialog());
+            mnuPresetKomora9 = new ToolStripMenuItem("Wczytaj profil: Komora 9 (V350 + IO-DI8-RO8)", null, (s, e) => ApplyHardwareProfile(HardwareProfile.CreateKomora9Profile()));
+            mnuPresetV350 = new ToolStripMenuItem("Wczytaj profil: V350 Standalone (Standard)", null, (s, e) => ApplyHardwareProfile(HardwareProfile.CreateDefaultProfile()));
+            mnuPresetV570 = new ToolStripMenuItem("Wczytaj profil: V570 Modular + V200-18-E3XB");
+            mnuPresetV570.Click += (s, e) =>
+            {
+                var p = new HardwareProfile();
+                p.SelectedModelName = "V570-57-T20B";
+                p.SelectedSnapInName = "V200-18-E3XB";
+                p.EnableExpansionBus = true;
+                p.ExpansionSlots[0].ModuleName = "IO-DI8-RO8";
+                ApplyHardwareProfile(p);
+            };
+            mnuPresetV1040 = new ToolStripMenuItem("Wczytaj profil: V1040 Color (800x600)");
+            mnuPresetV1040.Click += (s, e) =>
+            {
+                var p = new HardwareProfile();
+                p.SelectedModelName = "V1040-20-T20B";
+                p.SelectedSnapInName = "V200-18-E4XB";
+                p.EnableExpansionBus = false;
+                ApplyHardwareProfile(p);
+            };
+            mnuHardware.DropDownItems.AddRange(new ToolStripItem[] {
+                mnuHardwareConfig,
+                new ToolStripSeparator(),
+                mnuPresetKomora9,
+                mnuPresetV350,
+                mnuPresetV570,
+                mnuPresetV1040
+            });
+
+            // 4. Menu: Ustawienia / Settings
+            mnuSettings = new ToolStripMenuItem("Ustawienia");
+            mnuSettingsGeneral = new ToolStripMenuItem("Ustawienia symulatora...", null, (s, e) => OpenSettingsDialog());
+
+            // Podmenu: Język / Language
+            mnuLanguage = new ToolStripMenuItem("Język / Language");
+            mnuLangPl = new ToolStripMenuItem("Polski (Polish)", null, (s, e) => SetLanguage(AppLanguage.Polish));
+            mnuLangEn = new ToolStripMenuItem("English (Angielski)", null, (s, e) => SetLanguage(AppLanguage.English));
+            mnuLanguage.DropDownItems.AddRange(new ToolStripItem[] { mnuLangPl, mnuLangEn });
+
+            // Podmenu: Logowanie / Logging
+            mnuLogging = new ToolStripMenuItem("Logowanie");
+            mnuLogEnabled = new ToolStripMenuItem("Włącz logowanie do pliku", null, (s, e) => ToggleLogging(!config.LoggingEnabled)) { CheckOnClick = false };
+            mnuLogLevel = new ToolStripMenuItem("Szczegółowość logowania");
+            mnuLogLevelError = new ToolStripMenuItem("Tylko błędy (Error)", null, (s, e) => SetLogLevel(LogVerbosity.Error));
+            mnuLogLevelWarn = new ToolStripMenuItem("Ostrzeżenia i błędy (Warn)", null, (s, e) => SetLogLevel(LogVerbosity.Warn));
+            mnuLogLevelInfo = new ToolStripMenuItem("Standardowe informacje (Info)", null, (s, e) => SetLogLevel(LogVerbosity.Info));
+            mnuLogLevelDebug = new ToolStripMenuItem("Szczegółowy debug (Debug)", null, (s, e) => SetLogLevel(LogVerbosity.Debug));
+            mnuLogLevelTrace = new ToolStripMenuItem("Pełny zrzut pakietów (Trace)", null, (s, e) => SetLogLevel(LogVerbosity.Trace));
+            mnuLogLevel.DropDownItems.AddRange(new ToolStripItem[] {
+                mnuLogLevelError,
+                mnuLogLevelWarn,
+                mnuLogLevelInfo,
+                mnuLogLevelDebug,
+                mnuLogLevelTrace
+            });
+
+            mnuOpenLogFile = new ToolStripMenuItem("Otwórz plik logu (virtualplc_debug.log)...");
+            mnuOpenLogFile.Click += (s, e) => AppLogger.OpenLogFile();
+            mnuClearLogFile = new ToolStripMenuItem("Wyczyść plik logu");
+            mnuClearLogFile.Click += (s, e) =>
+            {
+                AppLogger.ClearLogFile();
+                MessageBox.Show(Localization.T("Settings_LogClearedMsg"), "VirtualPLC Log", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            };
+            mnuLogging.DropDownItems.AddRange(new ToolStripItem[] {
+                mnuLogEnabled,
+                mnuLogLevel,
+                new ToolStripSeparator(),
+                mnuOpenLogFile,
+                mnuClearLogFile
+            });
+
+            mnuSettings.DropDownItems.AddRange(new ToolStripItem[] {
+                mnuSettingsGeneral,
+                new ToolStripSeparator(),
+                mnuLanguage,
+                mnuLogging
+            });
+
+            // 5. Menu: Serwer PCOM TCP
+            mnuPcom = new ToolStripMenuItem("Serwer PCOM TCP");
+            mnuPcomStart = new ToolStripMenuItem("Uruchom serwer PCOM", null, (s, e) => pcomServer.Start((config != null && config.PcomPort > 0) ? config.PcomPort : PcomServer.DEFAULT_PORT));
+            mnuPcomStop = new ToolStripMenuItem("Zatrzymaj serwer PCOM", null, (s, e) => pcomServer.Stop());
             mnuPcom.DropDownItems.AddRange(new ToolStripItem[] { mnuPcomStart, mnuPcomStop });
 
-            var mnuHelp = new ToolStripMenuItem("Pomoc");
-            var mnuOpenLog = new ToolStripMenuItem("Otwórz plik logu debugera (virtualplc_debug.log)...", null, (s, e) => AppLogger.OpenLogFile());
-            var mnuInfo = new ToolStripMenuItem("Informacje systemowe OPLC...", null, (s, e) => ShowInfoScreen());
-            var mnuAbout = new ToolStripMenuItem("O symulatorze OPLC V350...", null, (s, e) => ShowAboutDialog());
+            // 6. Menu: Pomoc / Help
+            mnuHelp = new ToolStripMenuItem("Pomoc");
+            mnuOpenLog = new ToolStripMenuItem("Otwórz plik logu debugera...", null, (s, e) => AppLogger.OpenLogFile());
+            mnuInfo = new ToolStripMenuItem("Informacje systemowe OPLC...", null, (s, e) => ShowInfoScreen());
+            mnuAbout = new ToolStripMenuItem("O symulatorze OPLC...", null, (s, e) => ShowAboutDialog());
             mnuHelp.DropDownItems.AddRange(new ToolStripItem[] { mnuOpenLog, new ToolStripSeparator(), mnuInfo, new ToolStripSeparator(), mnuAbout });
 
-            menuStrip.Items.AddRange(new ToolStripItem[] { mnuFile, mnuPlc, mnuPcom, mnuHelp });
+            menuStrip.Items.AddRange(new ToolStripItem[] { mnuFile, mnuPlc, mnuHardware, mnuSettings, mnuPcom, mnuHelp });
             this.MainMenuStrip = menuStrip;
             this.Controls.Add(menuStrip);
 
-            // Pasek narzędziowy (ToolBar)
-            var toolStrip = new ToolStrip
+            // ==========================================
+            // PASEK NARZĘDZIOWY (ToolBar)
+            // ==========================================
+            toolStrip = new ToolStrip
             {
                 BackColor = Color.FromArgb(36, 42, 54),
                 GripStyle = ToolStripGripStyle.Hidden,
@@ -157,7 +325,7 @@ namespace UnitronicsV350Simulator
                 RenderMode = ToolStripRenderMode.System
             };
 
-            var btnToolbarLoad = new ToolStripButton("  📁 WGRAJ PROJEKT (.VLP)  ")
+            btnToolbarLoad = new ToolStripButton("  📁 WGRAJ PROJEKT  ")
             {
                 BackColor = Color.FromArgb(0, 120, 215),
                 ForeColor = Color.White,
@@ -165,7 +333,7 @@ namespace UnitronicsV350Simulator
             };
             btnToolbarLoad.Click += (s, e) => OpenProjectDialog();
 
-            var btnToolbarQuick = new ToolStripButton("  ⚡ Komora_9_PLC.vlp  ")
+            btnToolbarQuick = new ToolStripButton("  ⚡ Komora_9_PLC.vlp  ")
             {
                 BackColor = Color.FromArgb(0, 150, 136),
                 ForeColor = Color.White,
@@ -173,14 +341,14 @@ namespace UnitronicsV350Simulator
             };
             btnToolbarQuick.Click += (s, e) => QuickLoadKomora9();
 
-            var btnToolbarClear = new ToolStripButton("  🧹 Czysty OPLC  ")
+            btnToolbarClear = new ToolStripButton("  🧹 Czysty OPLC  ")
             {
                 BackColor = Color.FromArgb(60, 68, 80),
                 ForeColor = Color.FromArgb(220, 220, 220)
             };
             btnToolbarClear.Click += (s, e) => ClearProject();
 
-            var btnToolbarRun = new ToolStripButton("  ▶ START (RUN)  ")
+            btnToolbarRun = new ToolStripButton("  ▶ START (RUN)  ")
             {
                 BackColor = Color.FromArgb(46, 125, 50),
                 ForeColor = Color.White,
@@ -188,7 +356,7 @@ namespace UnitronicsV350Simulator
             };
             btnToolbarRun.Click += (s, e) => StartPlc();
 
-            var btnToolbarStop = new ToolStripButton("  ⏹ STOP  ")
+            btnToolbarStop = new ToolStripButton("  ⏹ STOP  ")
             {
                 BackColor = Color.FromArgb(198, 40, 40),
                 ForeColor = Color.White,
@@ -196,13 +364,29 @@ namespace UnitronicsV350Simulator
             };
             btnToolbarStop.Click += (s, e) => StopPlc();
 
-            var btnToolbarReset = new ToolStripButton("  🔄 RESET  ")
+            btnToolbarReset = new ToolStripButton("  🔄 RESET  ")
             {
                 BackColor = Color.FromArgb(239, 108, 0),
                 ForeColor = Color.White,
                 Font = new Font("Segoe UI", 9f, FontStyle.Bold)
             };
             btnToolbarReset.Click += (s, e) => ResetPlc();
+
+            btnToolbarHw = new ToolStripButton("  ⚙ SPRZĘT  ")
+            {
+                BackColor = Color.FromArgb(70, 80, 100),
+                ForeColor = Color.White,
+                Font = new Font("Segoe UI", 9f, FontStyle.Bold)
+            };
+            btnToolbarHw.Click += (s, e) => OpenHardwareConfigDialog();
+
+            btnToolbarSettings = new ToolStripButton("  🔧 USTAWIENIA  ")
+            {
+                BackColor = Color.FromArgb(55, 65, 80),
+                ForeColor = Color.White,
+                Font = new Font("Segoe UI", 9f, FontStyle.Bold)
+            };
+            btnToolbarSettings.Click += (s, e) => OpenSettingsDialog();
 
             toolStrip.Items.AddRange(new ToolStripItem[] {
                 btnToolbarLoad,
@@ -211,22 +395,28 @@ namespace UnitronicsV350Simulator
                 new ToolStripSeparator(),
                 btnToolbarRun,
                 btnToolbarStop,
-                btnToolbarReset
+                btnToolbarReset,
+                new ToolStripSeparator(),
+                btnToolbarHw,
+                btnToolbarSettings
             });
             this.Controls.Add(toolStrip);
 
-            // Dolny pasek statusu (StatusStrip)
-            var statusStrip = new StatusStrip
+            // ==========================================
+            // DOLNY PASEK STATUSU (StatusStrip)
+            // ==========================================
+            statusStrip = new StatusStrip
             {
                 BackColor = Color.FromArgb(18, 22, 30),
                 ForeColor = Color.FromArgb(200, 210, 225)
             };
 
-            statusPlcState = new ToolStripStatusLabel("STAN: STOP (Stan fabryczny)") { Width = 230, TextAlign = ContentAlignment.MiddleLeft };
-            statusScanTime = new ToolStripStatusLabel("Cykl: 0.0 ms | Skan: 0") { Width = 180, TextAlign = ContentAlignment.MiddleLeft };
-            statusPcom = new ToolStripStatusLabel("PCOM TCP: :20256") { Width = 160, TextAlign = ContentAlignment.MiddleLeft };
-            statusActivePage = new ToolStripStatusLabel("Ekran HMI: 1") { Width = 160, TextAlign = ContentAlignment.MiddleLeft };
-            statusProjectName = new ToolStripStatusLabel("Projekt: [Brak programu]") { Spring = true, TextAlign = ContentAlignment.MiddleRight };
+            statusPlcState = new ToolStripStatusLabel("STAN: STOP") { Width = 210, TextAlign = ContentAlignment.MiddleLeft };
+            statusScanTime = new ToolStripStatusLabel("Cykl: 0.0 ms") { Width = 170, TextAlign = ContentAlignment.MiddleLeft };
+            statusPcom = new ToolStripStatusLabel("PCOM TCP: :20256") { Width = 170, TextAlign = ContentAlignment.MiddleLeft };
+            statusActivePage = new ToolStripStatusLabel("Ekran HMI: 1") { Width = 150, TextAlign = ContentAlignment.MiddleLeft };
+            statusHwProfile = new ToolStripStatusLabel("Sprzęt: V350-35-RA22") { Width = 230, TextAlign = ContentAlignment.MiddleLeft };
+            statusProjectName = new ToolStripStatusLabel("Projekt: [Brak]") { Spring = true, TextAlign = ContentAlignment.MiddleRight };
 
             statusStrip.Items.AddRange(new ToolStripItem[] {
                 statusPlcState,
@@ -236,11 +426,16 @@ namespace UnitronicsV350Simulator
                 statusPcom,
                 new ToolStripSeparator(),
                 statusActivePage,
+                new ToolStripSeparator(),
+                statusHwProfile,
                 statusProjectName
             });
             this.Controls.Add(statusStrip);
 
-            // Główny SplitContainer: Lewo (Panel V350) | Prawo (Zakładki)
+            // ==========================================
+            // GŁÓWNY SPLITCONTAINER
+            // Lewo: Panel czołowy V350 / Vision | Prawo: Zakładki
+            // ==========================================
             var splitMain = new SplitContainer
             {
                 Dock = DockStyle.Fill,
@@ -252,15 +447,11 @@ namespace UnitronicsV350Simulator
             this.Controls.Add(splitMain);
             splitMain.BringToFront();
 
-            // ==========================================
-            // LEWY PANEL: PULPIT FIZYCZNY UNITRONICS V350
-            // ==========================================
+            // Panel fizyczny OPLC
             var pnlV350Bezel = CreateV350FrontPanel();
             splitMain.Panel1.Controls.Add(pnlV350Bezel);
 
-            // ==========================================
-            // PRAWY PANEL: ZAKŁADKI DIAGNOSTYCZNE I I/O
-            // ==========================================
+            // Prawy Panel: Zakładki
             tabControlMain = new TabControl
             {
                 Dock = DockStyle.Fill,
@@ -268,32 +459,32 @@ namespace UnitronicsV350Simulator
             };
 
             // Zakładka 1: Szafka I/O
-            var tabIo = new TabPage("Szafka I/O & Moduł EX-A2X");
+            tabIo = new TabPage("Szafka I/O");
             tabIo.BackColor = Color.FromArgb(28, 32, 40);
             tabIo.Controls.Add(hardwarePanel);
             hardwarePanel.Dock = DockStyle.Fill;
             tabControlMain.TabPages.Add(tabIo);
 
-            // Zakładka 2: Tabela Zmiennych (Live Watch)
-            var tabWatch = new TabPage("Tabela Zmiennych (Live Watch)");
+            // Zakładka 2: Tabela Zmiennych
+            tabWatch = new TabPage("Tabela Zmiennych");
             tabWatch.BackColor = Color.FromArgb(28, 32, 40);
             InitializeWatchTab(tabWatch);
             tabControlMain.TabPages.Add(tabWatch);
 
-            // Zakładka 3: Podgląd Drabinki (Ladder Logic)
-            var tabLadder = new TabPage("Drabinka PLC (Ladder Logic)");
+            // Zakładka 3: Podgląd Drabinki
+            tabLadder = new TabPage("Drabinka PLC");
             tabLadder.BackColor = Color.FromArgb(28, 32, 40);
             InitializeLadderTab(tabLadder);
             tabControlMain.TabPages.Add(tabLadder);
 
-            // Zakładka 4: Nawigator Ekranów HMI
-            var tabHmi = new TabPage("Ekrany HMI (Nawigator)");
+            // Zakładka 4: Nawigator HMI
+            tabHmi = new TabPage("Ekrany HMI");
             tabHmi.BackColor = Color.FromArgb(28, 32, 40);
             InitializeHmiTab(tabHmi);
             tabControlMain.TabPages.Add(tabHmi);
 
-            // Zakładka 5: Dziennik Zdarzeń & PCOM
-            var tabLog = new TabPage("Dziennik Zdarzeń & PCOM");
+            // Zakładka 5: Dziennik & Logi
+            tabLog = new TabPage("Dziennik Zdarzeń");
             tabLog.BackColor = Color.FromArgb(28, 32, 40);
             InitializeLogTab(tabLog);
             tabControlMain.TabPages.Add(tabLog);
@@ -310,7 +501,7 @@ namespace UnitronicsV350Simulator
                 Padding = new Padding(12)
             };
 
-            // Obudowa V350 (Stylizowana ramka przemysłowa)
+            // Obudowa Vision (ramka przemysłowa)
             var pnlOplcCase = new Panel
             {
                 Dock = DockStyle.Fill,
@@ -337,9 +528,10 @@ namespace UnitronicsV350Simulator
                 AutoSize = true
             };
 
-            var lblLogoModel = new Label
+            string family = (config != null && config.Profile != null) ? config.Profile.GetCurrentModelSpec().Family : "Vision";
+            lblLogoModel = new Label
             {
-                Text = "Vision350™",
+                Text = family + "™",
                 Font = new Font("Segoe UI", 10f, FontStyle.Bold),
                 ForeColor = Color.FromArgb(0, 180, 255),
                 Left = 135,
@@ -356,7 +548,7 @@ namespace UnitronicsV350Simulator
             pnlTopHeader.Controls.Add(lblLogoModel);
             pnlOplcCase.Controls.Add(pnlTopHeader);
 
-            // Kontener wyświetlacza TFT 320x240
+            // Kontener wyświetlacza TFT
             var pnlScreenFrame = new Panel
             {
                 Size = new Size(344, 264),
@@ -372,13 +564,18 @@ namespace UnitronicsV350Simulator
                 Left = 10,
                 Top = 10,
                 BackColor = Color.Black,
-                SizeMode = PictureBoxSizeMode.Normal
+                SizeMode = PictureBoxSizeMode.Zoom
             };
 
             picScreen.MouseDown += (s, e) =>
             {
                 int activePage = (plc.SI[9] > 0) ? plc.SI[9] : 1;
-                hmiRenderer.HandleTouchDown(e.X, e.Y, activePage);
+                int curW = hmiRenderer.ScreenWidth;
+                int curH = hmiRenderer.ScreenHeight;
+                int touchX = (int)((long)e.X * curW / Math.Max(1, picScreen.Width));
+                int touchY = (int)((long)e.Y * curH / Math.Max(1, picScreen.Height));
+
+                hmiRenderer.HandleTouchDown(touchX, touchY, activePage);
                 int newPage = (plc.SI[9] > 0) ? plc.SI[9] : 1;
                 picScreen.Image = hmiRenderer.RenderScreen(newPage);
                 picScreen.Refresh();
@@ -387,7 +584,12 @@ namespace UnitronicsV350Simulator
             picScreen.MouseUp += (s, e) =>
             {
                 int activePage = (plc.SI[9] > 0) ? plc.SI[9] : 1;
-                hmiRenderer.HandleTouchUp(e.X, e.Y, activePage);
+                int curW = hmiRenderer.ScreenWidth;
+                int curH = hmiRenderer.ScreenHeight;
+                int touchX = (int)((long)e.X * curW / Math.Max(1, picScreen.Width));
+                int touchY = (int)((long)e.Y * curH / Math.Max(1, picScreen.Height));
+
+                hmiRenderer.HandleTouchUp(touchX, touchY, activePage);
                 int newPage = (plc.SI[9] > 0) ? plc.SI[9] : 1;
                 picScreen.Image = hmiRenderer.RenderScreen(newPage);
                 picScreen.Refresh();
@@ -396,9 +598,14 @@ namespace UnitronicsV350Simulator
             pnlScreenFrame.Controls.Add(picScreen);
             pnlOplcCase.Controls.Add(pnlScreenFrame);
 
+            var spec = (config != null && config.Profile != null) ? config.Profile.GetCurrentModelSpec() : null;
+            string dispType = spec != null ? spec.DisplayType : "Color TFT";
+            int sw = spec != null ? spec.ScreenWidth : 320;
+            int sh = spec != null ? spec.ScreenHeight : 240;
+
             lblScreenCaption = new Label
             {
-                Text = "TFT 3.5\" Color Touchscreen (320x240 px)",
+                Text = string.Format("{0} ({1}x{2} px)", dispType, sw, sh),
                 ForeColor = Color.FromArgb(160, 175, 195),
                 Font = new Font("Segoe UI", 8f, FontStyle.Regular),
                 Top = 322,
@@ -408,7 +615,7 @@ namespace UnitronicsV350Simulator
             };
             pnlOplcCase.Controls.Add(lblScreenCaption);
 
-            // Klawiatura membranowa V350: Wyłącznie 5 klawiszy funkcyjnych F1..F5 fizycznego panelu
+            // Klawiatura membranowa: 5 klawiszy funkcyjnych F1..F5 fizycznego panelu
             var pnlKeypad = new Panel
             {
                 Left = 12,
@@ -419,7 +626,6 @@ namespace UnitronicsV350Simulator
                 BorderStyle = BorderStyle.FixedSingle
             };
 
-            // Rząd: Klawisze funkcyjne F1 .. F5
             int btnW = 64, btnH = 34, gap = 8;
             for (int i = 0; i < 5; i++)
             {
@@ -442,10 +648,9 @@ namespace UnitronicsV350Simulator
                 pnlKeypad.Controls.Add(btnF);
             }
 
-            // Informacja i wskazówki dotyczące obsługi
-            var lblTouchHint = new Label
+            lblTouchHint = new Label
             {
-                Text = "• Ekran TFT 3.5\" Touchscreen: kliknij na ekranie, aby wciskać przyciski HMI lub przełączać ekrany.\n• Klawisze F1..F5: sterują bitami SB 31..SB 35 sterownika PLC.",
+                Text = "• Ekran Touchscreen: kliknij na ekranie, aby wciskać przyciski HMI lub przełączać ekrany.\n• Klawisze F1..F5: sterują bitami SB 31..SB 35 sterownika PLC.",
                 Left = 8,
                 Top = 52,
                 Width = 352,
@@ -499,7 +704,7 @@ namespace UnitronicsV350Simulator
                 Padding = new Padding(8, 6, 8, 6)
             };
 
-            var lblFilt = new Label { Text = "Filtr typu:", Left = 10, Top = 10, AutoSize = true, ForeColor = Color.FromArgb(200, 215, 235) };
+            lblWatchFilt = new Label { Text = "Filtr typu:", Left = 10, Top = 10, AutoSize = true, ForeColor = Color.FromArgb(200, 215, 235) };
             cboWatchFilter = new ComboBox
             {
                 Left = 80,
@@ -522,7 +727,7 @@ namespace UnitronicsV350Simulator
             cboWatchFilter.SelectedIndex = 0;
             cboWatchFilter.SelectedIndexChanged += (s, e) => FilterWatchItems();
 
-            var lblSearch = new Label { Text = "Szukaj:", Left = 300, Top = 10, AutoSize = true, ForeColor = Color.FromArgb(200, 215, 235) };
+            lblWatchSearch = new Label { Text = "Szukaj:", Left = 300, Top = 10, AutoSize = true, ForeColor = Color.FromArgb(200, 215, 235) };
             txtWatchSearch = new TextBox
             {
                 Left = 350,
@@ -533,7 +738,7 @@ namespace UnitronicsV350Simulator
             };
             txtWatchSearch.TextChanged += (s, e) => FilterWatchItems();
 
-            var btnForce = new Button
+            btnWatchForce = new Button
             {
                 Text = "✏ Zmień / Wymuś wartość (Force)",
                 Left = 525,
@@ -545,13 +750,13 @@ namespace UnitronicsV350Simulator
                 FlatStyle = FlatStyle.Flat,
                 Font = new Font("Segoe UI", 8.25f, FontStyle.Bold)
             };
-            btnForce.Click += (s, e) => ForceSelectedWatchValue();
+            btnWatchForce.Click += (s, e) => ForceSelectedWatchValue();
 
-            pnlTop.Controls.Add(lblFilt);
+            pnlTop.Controls.Add(lblWatchFilt);
             pnlTop.Controls.Add(cboWatchFilter);
-            pnlTop.Controls.Add(lblSearch);
+            pnlTop.Controls.Add(lblWatchSearch);
             pnlTop.Controls.Add(txtWatchSearch);
-            pnlTop.Controls.Add(btnForce);
+            pnlTop.Controls.Add(btnWatchForce);
             tab.Controls.Add(pnlTop);
 
             dgvWatch = new DataGridView
@@ -670,10 +875,10 @@ namespace UnitronicsV350Simulator
 
             var btnOpenScreen = new Button
             {
-                Text = "▶ Przełącz V350 na zaznaczony ekran HMI",
+                Text = "▶ Przełącz na zaznaczony ekran HMI",
                 Left = 10,
                 Top = 7,
-                Width = 300,
+                Width = 280,
                 Height = 28,
                 BackColor = Color.FromArgb(0, 150, 136),
                 ForeColor = Color.White,
@@ -684,8 +889,8 @@ namespace UnitronicsV350Simulator
 
             var lblHint = new Label
             {
-                Text = "Podwójne kliknięcie na liście natychmiast przełącza rejestr systemowy SI 9 (Current Display ID).",
-                Left = 325,
+                Text = "Podwójne kliknięcie natychmiast przełącza SI 9 (Current Display ID).",
+                Left = 300,
                 Top = 12,
                 AutoSize = true,
                 ForeColor = Color.FromArgb(180, 200, 220)
@@ -796,6 +1001,243 @@ namespace UnitronicsV350Simulator
         }
 
         // ==========================================
+        // DIALOGI I KONFIGURACJA SPRZĘTOWA / OPCJE
+        // ==========================================
+        private void OpenHardwareConfigDialog()
+        {
+            using (var dlg = new HardwareConfigDialog(config.Profile, startupMode: false))
+            {
+                if (dlg.ShowDialog(this) == DialogResult.OK)
+                {
+                    ApplyHardwareProfile(dlg.ResultProfile);
+                    config.Profile = dlg.ResultProfile;
+                    config.ShowConfigOnStartup = dlg.ShowOnStartupValue;
+                    config.Save();
+                }
+            }
+        }
+
+        public void ApplyHardwareProfile(HardwareProfile newProfile)
+        {
+            if (newProfile == null) return;
+            config.Profile = newProfile;
+            plc.SetProfile(newProfile);
+            hardwarePanel.RebuildLayout(newProfile);
+
+            var spec = newProfile.GetCurrentModelSpec();
+            if (lblLogoModel != null) lblLogoModel.Text = spec.Family + "™";
+            if (lblScreenCaption != null) lblScreenCaption.Text = string.Format("{0} ({1}x{2} px)", spec.DisplayType, spec.ScreenWidth, spec.ScreenHeight);
+
+            UpdateStatusLabels();
+
+            int activePage = (plc.SI[9] > 0) ? plc.SI[9] : 1;
+            picScreen.Image = hmiRenderer.RenderScreen(activePage);
+            picScreen.Refresh();
+
+            if (plc.Project != null)
+            {
+                PopulateWatchTable(plc.Project);
+            }
+
+            plc.Log("Zastosowano nowy profil sprzetowy: " + newProfile.GetModelFullName());
+        }
+
+        private void OpenSettingsDialog()
+        {
+            using (var dlg = new SettingsDialog(config, config.Profile))
+            {
+                if (dlg.ShowDialog(this) == DialogResult.OK)
+                {
+                    UpdateLoggingMenuItems();
+                    UpdateStatusLabels();
+                }
+            }
+        }
+
+        private void SetLanguage(AppLanguage lang)
+        {
+            config.Language = lang;
+            config.Save();
+            Localization.SetLanguage(lang);
+        }
+
+        private void SetLogLevel(LogVerbosity level)
+        {
+            config.LoggingVerbosity = level;
+            config.Save();
+            AppLogger.Configure(config);
+            UpdateLoggingMenuItems();
+        }
+
+        private void ToggleLogging(bool enabled)
+        {
+            config.LoggingEnabled = enabled;
+            config.Save();
+            AppLogger.Configure(config);
+            UpdateLoggingMenuItems();
+        }
+
+        private void UpdateLoggingMenuItems()
+        {
+            if (mnuLogEnabled != null) mnuLogEnabled.Checked = config.LoggingEnabled;
+            if (mnuLogLevelError != null) mnuLogLevelError.Checked = (config.LoggingVerbosity == LogVerbosity.Error);
+            if (mnuLogLevelWarn != null) mnuLogLevelWarn.Checked = (config.LoggingVerbosity == LogVerbosity.Warn);
+            if (mnuLogLevelInfo != null) mnuLogLevelInfo.Checked = (config.LoggingVerbosity == LogVerbosity.Info);
+            if (mnuLogLevelDebug != null) mnuLogLevelDebug.Checked = (config.LoggingVerbosity == LogVerbosity.Debug);
+            if (mnuLogLevelTrace != null) mnuLogLevelTrace.Checked = (config.LoggingVerbosity == LogVerbosity.Trace);
+        }
+
+        public void ApplyLanguage()
+        {
+            string projName = (plc.Project != null) ? plc.Project.ProjectName : Localization.T("Status_NoProgram");
+            string hwFullName = config.Profile != null ? config.Profile.GetModelFullName() : "V350";
+            this.Text = string.Format(Localization.T("AppTitle"), "0.0.4", hwFullName + " - " + projName);
+
+            // Menu: Plik
+            mnuFile.Text = Localization.T("Menu_File");
+            mnuLoad.Text = Localization.T("Menu_LoadProject");
+            mnuQuickLoad.Text = Localization.T("Menu_QuickLoadKomora9");
+            mnuClear.Text = Localization.T("Menu_ClearProject");
+            mnuExit.Text = Localization.T("Menu_Exit");
+
+            // Menu: Sterowanie PLC
+            mnuPlc.Text = Localization.T("Menu_Plc");
+            mnuRun.Text = Localization.T("Menu_Start");
+            mnuStop.Text = Localization.T("Menu_Stop");
+            mnuReset.Text = Localization.T("Menu_Reset");
+
+            // Menu: Sprzęt
+            mnuHardware.Text = Localization.T("Menu_Hardware");
+            mnuHardwareConfig.Text = Localization.T("Menu_HardwareConfig");
+            mnuPresetKomora9.Text = Localization.T("HwCfg_Preset_Komora9");
+            mnuPresetV350.Text = Localization.T("HwCfg_Preset_Default");
+
+            // Menu: Ustawienia
+            mnuSettings.Text = Localization.T("Menu_Settings");
+            mnuSettingsGeneral.Text = Localization.T("Settings_Title");
+            mnuLanguage.Text = Localization.T("Menu_Language");
+            mnuLangPl.Text = Localization.T("Menu_Lang_PL");
+            mnuLangEn.Text = Localization.T("Menu_Lang_EN");
+            mnuLangPl.Checked = (Localization.CurrentLanguage == AppLanguage.Polish);
+            mnuLangEn.Checked = (Localization.CurrentLanguage == AppLanguage.English);
+
+            mnuLogging.Text = Localization.T("Menu_Logging");
+            mnuLogEnabled.Text = Localization.T("Menu_LogEnabled");
+            mnuLogLevel.Text = Localization.T("Menu_LogLevel");
+            mnuLogLevelError.Text = Localization.T("Settings_LogLevel_Error");
+            mnuLogLevelWarn.Text = Localization.T("Settings_LogLevel_Warn");
+            mnuLogLevelInfo.Text = Localization.T("Settings_LogLevel_Info");
+            mnuLogLevelDebug.Text = Localization.T("Settings_LogLevel_Debug");
+            mnuLogLevelTrace.Text = Localization.T("Settings_LogLevel_Trace");
+            mnuOpenLogFile.Text = Localization.T("Menu_OpenLog");
+            mnuClearLogFile.Text = Localization.T("Menu_ClearLog");
+
+            UpdateLoggingMenuItems();
+
+            // Menu: PCOM
+            mnuPcom.Text = Localization.T("Menu_Pcom");
+            int port = (config != null && config.PcomPort > 0) ? config.PcomPort : PcomServer.DEFAULT_PORT;
+            mnuPcomStart.Text = string.Format(Localization.T("Menu_PcomStart"), port);
+            mnuPcomStop.Text = Localization.T("Menu_PcomStop");
+
+            // Menu: Pomoc
+            mnuHelp.Text = Localization.T("Menu_Help");
+            mnuOpenLog.Text = Localization.T("Menu_OpenLog");
+            mnuInfo.Text = Localization.T("Menu_Info");
+            mnuAbout.Text = Localization.T("Menu_About");
+
+            // Pasek narzędziowy
+            btnToolbarLoad.Text = "  📁 " + Localization.T("Menu_LoadProject").Replace("...", "") + "  ";
+            btnToolbarClear.Text = "  🧹 " + Localization.T("Menu_ClearProject") + "  ";
+            btnToolbarRun.Text = "  ▶ " + Localization.T("Menu_Start") + "  ";
+            btnToolbarStop.Text = "  ⏹ " + Localization.T("Menu_Stop") + "  ";
+            btnToolbarReset.Text = "  🔄 " + Localization.T("Menu_Reset") + "  ";
+            btnToolbarHw.Text = "  ⚙ " + Localization.T("Menu_Hardware") + "  ";
+            btnToolbarSettings.Text = "  🔧 " + Localization.T("Menu_Settings") + "  ";
+
+            // Zakładki
+            tabIo.Text = Localization.T("Tab_Hardware");
+            tabWatch.Text = Localization.T("Tab_Watch");
+            tabLadder.Text = Localization.T("Tab_Subroutines");
+            tabHmi.Text = Localization.T("Tab_HmiPages");
+            tabLog.Text = Localization.T("Tab_Diagnostics");
+
+            // Zakładka Watch
+            if (lblWatchFilt != null) lblWatchFilt.Text = (Localization.CurrentLanguage == AppLanguage.Polish) ? "Filtr typu:" : "Type filter:";
+            if (lblWatchSearch != null) lblWatchSearch.Text = (Localization.CurrentLanguage == AppLanguage.Polish) ? "Szukaj:" : "Search:";
+            if (btnWatchForce != null) btnWatchForce.Text = (Localization.CurrentLanguage == AppLanguage.Polish) ? "✏ Zmień / Wymuś wartość (Force)" : "✏ Change / Force Value";
+
+            if (dgvWatch != null && dgvWatch.Columns.Count >= 5)
+            {
+                dgvWatch.Columns[0].HeaderText = Localization.T("Watch_Col_Type");
+                dgvWatch.Columns[1].HeaderText = Localization.T("Watch_Col_Addr");
+                dgvWatch.Columns[2].HeaderText = Localization.T("Watch_Col_Symbol");
+                dgvWatch.Columns[3].HeaderText = (Localization.CurrentLanguage == AppLanguage.Polish) ? "Wartość Live" : "Live Value";
+                dgvWatch.Columns[4].HeaderText = (Localization.CurrentLanguage == AppLanguage.Polish) ? "Jednostka / Format" : "Format";
+            }
+
+            // Podpowiedzi na obudowie
+            if (lblTouchHint != null && config != null && config.Profile != null)
+            {
+                var curSpec = config.Profile.GetCurrentModelSpec();
+                lblTouchHint.Text = (Localization.CurrentLanguage == AppLanguage.Polish)
+                    ? string.Format("• Ekran {0} Touchscreen: kliknij na ekranie, aby wciskać przyciski HMI lub przełączać ekrany.\n• Klawisze F1..F5: sterują bitami SB 31..SB 35 sterownika PLC.", curSpec.DisplayType)
+                    : string.Format("• Display {0} Touchscreen: click on the screen to operate HMI controls.\n• Keys F1..F5: control PLC system bits SB 31..SB 35.", curSpec.DisplayType);
+            }
+
+            UpdateStatusLabels();
+        }
+
+        private void UpdateStatusLabels()
+        {
+            if (statusPlcState == null) return;
+
+            // 1. Stan PLC
+            if (plc.State == PlcRunState.RUN)
+            {
+                statusPlcState.Text = Localization.T("Status_State_RUN");
+                statusPlcState.ForeColor = Color.FromArgb(0, 230, 118);
+            }
+            else if (plc.HasProgramLoaded)
+            {
+                statusPlcState.Text = Localization.T("Status_State_STOP");
+                statusPlcState.ForeColor = Color.FromArgb(255, 204, 0);
+            }
+            else
+            {
+                statusPlcState.Text = Localization.T("Status_NoProgram");
+                statusPlcState.ForeColor = Color.FromArgb(255, 82, 82);
+            }
+
+            // 2. Czas cyklu i PCOM
+            statusScanTime.Text = string.Format(Localization.T("Status_ScanTime"), plc.LastScanDurationMs, 20);
+
+            int port = (config != null && config.PcomPort > 0) ? config.PcomPort : PcomServer.DEFAULT_PORT;
+            statusPcom.Text = pcomServer.IsActive
+                ? string.Format(Localization.T("Status_PcomListening"), port)
+                : Localization.T("Status_PcomStopped");
+
+            // 3. Aktywny ekran HMI
+            int activePage = (plc.SI[9] > 0) ? plc.SI[9] : 1;
+            string pageName = (plc.Project != null && plc.Project.Pages.ContainsKey(activePage)) ? plc.Project.Pages[activePage].Name : "";
+            statusActivePage.Text = string.Format(Localization.T("Status_Page"), activePage, pageName);
+
+            // 4. Profil sprzętowy
+            string hwName = (config != null && config.Profile != null) ? config.Profile.GetModelFullName() : "V350";
+            statusHwProfile.Text = string.Format(Localization.T("Status_HardwareProfile"), hwName);
+
+            // 5. Nazwa projektu
+            if (plc.Project != null)
+            {
+                statusProjectName.Text = string.Format(Localization.T("Status_Project"), plc.Project.ProjectName, plc.Project.HardwareTarget);
+            }
+            else
+            {
+                statusProjectName.Text = Localization.T("Status_NoProject");
+            }
+        }
+
+        // ==========================================
         // PĘTLA WYKONYWANIA PROGRAMU PLC (BACKGROUND)
         // ==========================================
         private void ScanWorkerLoop()
@@ -831,34 +1273,17 @@ namespace UnitronicsV350Simulator
         private int watchTableRefreshCounter = 0;
         private void OnUiTimerTick(object sender, EventArgs e)
         {
-            // 1. Renderowanie ekranu HMI V350
+            // 1. Renderowanie ekranu HMI
             int activePage = (plc.SI[9] > 0) ? plc.SI[9] : 1;
             picScreen.Image = hmiRenderer.RenderScreen(activePage);
 
-            // 2. Aktualizacja diod LED na obudowie V350
+            // 2. Aktualizacja diod LED na obudowie
             lblPwrLed.BackColor = Color.LimeGreen;
             lblRunLed.BackColor = (plc.State == PlcRunState.RUN) ? Color.LimeGreen : Color.FromArgb(50, 65, 50);
             lblErrLed.BackColor = (!plc.HasProgramLoaded || plc.State == PlcRunState.STOP) ? Color.FromArgb(200, 40, 40) : Color.FromArgb(40, 20, 20);
 
             // 3. Aktualizacja paska stanu
-            if (plc.State == PlcRunState.RUN)
-            {
-                statusPlcState.Text = "STAN: RUN (Wykonywanie drabinki)";
-                statusPlcState.ForeColor = Color.FromArgb(0, 230, 118);
-            }
-            else if (plc.HasProgramLoaded)
-            {
-                statusPlcState.Text = "STAN: STOP (Program załadowany)";
-                statusPlcState.ForeColor = Color.FromArgb(255, 204, 0);
-            }
-            else
-            {
-                statusPlcState.Text = "STAN: CZYSTY OPLC (Brak programu)";
-                statusPlcState.ForeColor = Color.FromArgb(255, 82, 82);
-            }
-
-            statusScanTime.Text = string.Format("Cykl: {0:0.0} ms | Skan: {1}", plc.LastScanDurationMs, plc.ScanCount);
-            statusActivePage.Text = "Ekran HMI: " + activePage;
+            UpdateStatusLabels();
 
             // 4. Odświeżanie wartości w tabeli Live Watch (co ~100 ms)
             watchTableRefreshCounter++;
@@ -888,8 +1313,7 @@ namespace UnitronicsV350Simulator
                 PopulateSubroutineTree(proj);
                 PopulateHmiPageList(proj);
 
-                statusProjectName.Text = "Projekt: " + proj.ProjectName;
-                this.Text = "Symulator PLC/HMI Unitronics Vision V350 v0.0.3 - [" + proj.ProjectName + "]";
+                ApplyLanguage();
 
                 // Start programu po załadowaniu
                 plc.Start();
@@ -906,7 +1330,7 @@ namespace UnitronicsV350Simulator
         {
             using (var ofd = new OpenFileDialog())
             {
-                ofd.Title = "Wybierz projekt VisiLogic OPLC";
+                ofd.Title = (Localization.CurrentLanguage == AppLanguage.Polish) ? "Wybierz projekt VisiLogic OPLC" : "Select VisiLogic OPLC Project";
                 ofd.Filter = "Projekty VisiLogic (*.vlp;*.vlx;*.udb)|*.vlp;*.vlx;*.udb|Wszystkie pliki (*.*)|*.*";
                 if (ofd.ShowDialog(this) == DialogResult.OK)
                 {
@@ -940,7 +1364,11 @@ namespace UnitronicsV350Simulator
 
         private void ClearProject()
         {
-            var res = MessageBox.Show("Czy na pewno chcesz wyczyścić program i przywrócić sterownik do czystego stanu fabrycznego?", "Czysty OPLC", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+            var res = MessageBox.Show(
+                (Localization.CurrentLanguage == AppLanguage.Polish)
+                    ? "Czy na pewno chcesz wyczyścić program i przywrócić sterownik do czystego stanu fabrycznego?"
+                    : "Are you sure you want to clear the program and return controller to factory standby state?",
+                "Czysty OPLC", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
             if (res != DialogResult.Yes) return;
 
             plc.Stop();
@@ -954,8 +1382,7 @@ namespace UnitronicsV350Simulator
             rtbLadderView.Clear();
             lvHmiPages.Items.Clear();
 
-            statusProjectName.Text = "Projekt: [Brak programu]";
-            this.Text = "Symulator PLC/HMI Unitronics Vision V350-35-RA22 v0.0.3 [Stan fabryczny]";
+            ApplyLanguage();
             plc.Log("Pamięć sterownika wyczyszczona. Sterownik powrócił do fabrycznego stanu OPLC (czysty sprzęt).");
         }
 
@@ -963,7 +1390,11 @@ namespace UnitronicsV350Simulator
         {
             if (!plc.HasProgramLoaded)
             {
-                MessageBox.Show("Nie można uruchomić PLC w trybie RUN bez załadowanego programu z VisiLogic!\nUżyj przycisku 'WGRAJ PROJEKT (.VLP)' aby załadować kod drabinkowy.", "Brak programu", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show(
+                    (Localization.CurrentLanguage == AppLanguage.Polish)
+                        ? "Nie można uruchomić PLC w trybie RUN bez załadowanego programu z VisiLogic!\nUżyj przycisku 'WGRAJ PROJEKT' aby załadować kod drabinkowy."
+                        : "Cannot start PLC in RUN mode without a loaded VisiLogic project!\nUse 'LOAD PROJECT' button to load ladder code.",
+                    "Brak programu", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
             plc.Start();
@@ -990,23 +1421,34 @@ namespace UnitronicsV350Simulator
         {
             allWatchItems.Clear();
 
-            // 1. Wejścia fizyczne I0..I19
-            for (int i = 0; i < 20; i++)
+            // 1. Wejścia fizyczne (liczba punktów zgodna z profilem sprzętowym)
+            int totalDi = (plc.Profile != null) ? plc.Profile.GetTotalDi() : 20;
+            for (int i = 0; i < totalDi; i++)
             {
                 string key = "I" + i;
                 string name = proj.OperandDescriptions.ContainsKey(key) ? proj.OperandDescriptions[key] : ("Wejście cyfrowe DI " + i);
                 allWatchItems.Add(new WatchItem { Type = "I", Address = i, Name = name, Format = "Bit (0/1)" });
             }
 
-            // 2. Wyjścia fizyczne O0..O15
-            for (int i = 0; i < 16; i++)
+            // 2. Wyjścia fizyczne (liczba punktów zgodna z profilem sprzętowym)
+            int totalDo = (plc.Profile != null) ? plc.Profile.GetTotalDo() : 16;
+            for (int i = 0; i < totalDo; i++)
             {
                 string key = "O" + i;
                 string name = proj.OperandDescriptions.ContainsKey(key) ? proj.OperandDescriptions[key] : ("Wyjście cyfrowe DO " + i);
                 allWatchItems.Add(new WatchItem { Type = "O", Address = i, Name = name, Format = "Bit (0/1)" });
             }
 
-            // 3. Pełna pula bitów pamięci MB 0..255 (z nazwami z projektu jeśli zdefiniowane)
+            // 3. Wejścia analogowe (AI)
+            int totalAi = (plc.Profile != null) ? plc.Profile.GetTotalAi() : 2;
+            for (int i = 0; i < totalAi; i++)
+            {
+                string key = "AN" + i;
+                string name = proj.OperandDescriptions.ContainsKey(key) ? proj.OperandDescriptions[key] : ("Wejście analogowe AI " + i);
+                allWatchItems.Add(new WatchItem { Type = "MI", Address = 100 + i, Name = name, Format = "Analog (0..1023)" });
+            }
+
+            // 4. Pełna pula bitów pamięci MB 0..255
             for (int i = 0; i <= 255; i++)
             {
                 string key = "MB" + i;
@@ -1014,7 +1456,7 @@ namespace UnitronicsV350Simulator
                 allWatchItems.Add(new WatchItem { Type = "MB", Address = i, Name = name, Format = "Bit (0/1)" });
             }
 
-            // 4. Pełna pula rejestrów całkowitych MI 0..127
+            // 5. Pełna pula rejestrów całkowitych MI 0..127
             for (int i = 0; i <= 127; i++)
             {
                 string key = "MI" + i;
@@ -1022,7 +1464,7 @@ namespace UnitronicsV350Simulator
                 allWatchItems.Add(new WatchItem { Type = "MI", Address = i, Name = name, Format = "Integer" });
             }
 
-            // 5. Dodatkowe nazwane operandy z projektu (ML, DW, T, SB, SI lub wyższe MB/MI)
+            // 6. Dodatkowe nazwane operandy z projektu
             foreach (var kvp in proj.OperandDescriptions)
             {
                 string key = kvp.Key;
@@ -1046,7 +1488,7 @@ namespace UnitronicsV350Simulator
                 }
             }
 
-            // 6. Kluczowe operandy systemowe
+            // 7. Kluczowe operandy systemowe
             if (!allWatchItems.Exists(x => x.Type == "SB" && x.Address == 0)) allWatchItems.Add(new WatchItem { Type = "SB", Address = 0, Name = "SB 0: Power-up bit", Format = "Bit" });
             if (!allWatchItems.Exists(x => x.Type == "SB" && x.Address == 1)) allWatchItems.Add(new WatchItem { Type = "SB", Address = 1, Name = "SB 1: First scan bit", Format = "Bit" });
             if (!allWatchItems.Exists(x => x.Type == "SB" && x.Address == 2)) allWatchItems.Add(new WatchItem { Type = "SB", Address = 2, Name = "SB 2: 1 sec pulse", Format = "Bit" });
@@ -1339,7 +1781,7 @@ namespace UnitronicsV350Simulator
         }
 
         // ==========================================
-        // KLAWISZE MEMBRANOWE V350
+        // KLAWISZE MEMBRANOWE
         // ==========================================
         private void PulseFunctionKey(int fIdx, bool isDown)
         {
@@ -1359,27 +1801,35 @@ namespace UnitronicsV350Simulator
 
         private void ShowInfoScreen()
         {
+            string hwName = config.Profile != null ? config.Profile.GetModelFullName() : "V350";
             string info = string.Format(
-                "UNITRONICS VISION V350-35-RA22\n" +
+                "UNITRONICS VISION SIMULATOR\n" +
                 "------------------------------------\n" +
-                "Stan PLC:       {0}\n" +
-                "Załadowany:     {1}\n" +
-                "Czas cyklu:     {2:0.0} ms\n" +
-                "Licznik cykli:  {3}\n" +
-                "Port PCOM TCP:  {4} ({5})\n" +
-                "Aktywny ekran:  ID {6}\n" +
-                "Liczba szczebli: {7}\n",
+                "Model sterownika: {0}\n" +
+                "Stan PLC:         {1}\n" +
+                "Załadowany:       {2}\n" +
+                "Czas cyklu:       {3:0.0} ms\n" +
+                "Licznik cykli:    {4}\n" +
+                "Port PCOM TCP:    {5} ({6})\n" +
+                "Aktywny ekran:    ID {7}\n" +
+                "Liczba szczebli:  {8}\n" +
+                "Logowanie aktywne:{9} (Poziom: {10})\n" +
+                "Język interfejsu: {11}\n",
+                hwName,
                 plc.State,
                 plc.Project != null ? plc.Project.ProjectName : "[Brak]",
                 plc.LastScanDurationMs,
                 plc.ScanCount,
-                PcomServer.DEFAULT_PORT,
+                config.PcomPort,
                 pcomServer.IsActive ? "Nasłuchuje" : "Zatrzymany",
                 plc.SI[9],
-                plc.Project != null ? GetTotalRungsCount(plc.Project) : 0
+                plc.Project != null ? GetTotalRungsCount(plc.Project) : 0,
+                config.LoggingEnabled ? "TAK" : "NIE",
+                config.LoggingVerbosity,
+                Localization.CurrentLanguage
             );
 
-            MessageBox.Show(info, "Informacje systemowe OPLC V350", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            MessageBox.Show(info, "Informacje systemowe OPLC", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
 
         private int GetTotalRungsCount(LoadedProject proj)
@@ -1391,22 +1841,24 @@ namespace UnitronicsV350Simulator
 
         private void ShowAboutDialog()
         {
+            string hwName = config.Profile != null ? config.Profile.GetModelFullName() : "V350";
             string msg =
-                "Symulator PLC/HMI Unitronics Vision V350-35-RA22 v0.0.3 [Portable]\n\n" +
-                "Wersja: 0.0.3 Portable (Natywna aplikacja Windows .NET 4.0 x86)\n" +
-                "Przeznaczenie: Weryfikacja programów PLC i wizualizacji HMI komór suszarniczych\n\n" +
+                "Unitronics Vision PLC/HMI Simulator v0.0.4 [Portable]\n\n" +
+                "Wersja: 0.0.4 Portable (Natywna aplikacja Windows .NET 4.0 x86)\n" +
+                "Aktywny profil: " + hwName + "\n" +
+                "Język: " + Localization.CurrentLanguage + "\n\n" +
                 "Właściwości:\n" +
-                "• Symulacja czystego sprzętu OPLC bez sztucznych pre-konfiguracji\n" +
+                "• Panel konfiguracji sprzętowej na starcie (Wybór sterownika Vision V130..V1210 i modułów EX-A2X)\n" +
+                "• Pełny dwujęzyczny interfejs (Polski i English) przełączany w czasie rzeczywistym\n" +
+                "• Konfigurowalne opcje logowania diagnostycznego (Error, Warn, Info, Debug, Trace)\n" +
                 "• Bezpośredni odczyt projektów VisiLogic (*.vlp, *.vlx, *.udb)\n" +
-                "• Pełny silnik Soft-PLC z ewaluacją logiki drabinkowej\n" +
-                "• Renderer graficzny ekranów HMI 320x240 z obsługą dotyku i Keypad\n" +
-                "• Wirtualna szafka I/O z przełącznikami, diodami i wejściami analogowymi\n" +
-                "• Serwer PCOM TCP na porcie 20256 zgodny z VisiLogic (Download & Monitor)\n" +
-                "• Pełna obsługa protokołu PCOM ASCII i PCOM Binary z sumami kontrolnymi 2's complement\n" +
-                "• Funkcja wielowątkowego logowania debugowania do pliku virtualplc_debug.log\n\n" +
+                "• Silnik Soft-PLC z ewaluacją logiki drabinkowej\n" +
+                "• Renderer graficzny ekranów HMI z obsługą dotyku i wirtualną klawiaturą Keypad\n" +
+                "• Wirtualna szafka I/O z dynamiczną magistralą EX-A2X i potencjometrami analogowymi\n" +
+                "• Serwer PCOM TCP zgodny z VisiLogic (Download & Monitor)\n\n" +
                 "Plik logu debugera: " + AppLogger.LogFilePath;
 
-            MessageBox.Show(msg, "O programie Unitronics V350 Simulator", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            MessageBox.Show(msg, "O programie Unitronics Vision Simulator", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
 
         private void HandlePlcLog(string logMsg)

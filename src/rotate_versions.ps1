@@ -22,7 +22,7 @@ if (Test-Path $exePath) {
     }
     
     $targetArchive = Join-Path $archiveDir $folderName
-    if (-not (Test-Path $targetArchive)) {
+    if ($folderName -ne ("v" + $CurrentVersion) -and -not (Test-Path $targetArchive)) {
         New-Item -ItemType Directory -Path $targetArchive -Force | Out-Null
         Copy-Item $exePath (Join-Path $targetArchive "virtualplc.exe") -Force
         if (Test-Path $docPath) {

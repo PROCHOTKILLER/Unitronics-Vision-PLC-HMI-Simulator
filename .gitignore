@@ -1,10 +1,11 @@
 # Executables (distributed via GitHub Releases)
-/*.exe
-archive/*.exe
+*.exe
+**/*.exe
 
-# Logs
+# Logs & local config
 *.log
 virtualplc_debug.log
+virtualplc_config.json
 
 # Build artifacts & temp
 bin/
