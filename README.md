@@ -64,10 +64,10 @@ This simulator is designed to emulate the complete runtime environment for all p
 Unitronics-Vision-PLC-HMI-Simulator/
 │
 ├── virtualplc.exe               # Latest standalone executable (v0.0.3)
-├── INSTRUKCJA_SYMULATORA.md     # Detailed Polish manual & setup guide
+├── SIMULATOR_MANUAL.md          # Detailed manual & setup guide
 ├── README.md                    # Project documentation
 │
-├── roboczy/                     # Source code & build workspace
+├── src/                         # Source code & build workspace
 │   ├── build.bat                # 1-click build script using csc.exe
 │   ├── rotate_versions.ps1      # Version rotator (max 5 historical versions)
 │   ├── Program.cs               # Application entry point
@@ -79,7 +79,7 @@ Unitronics-Vision-PLC-HMI-Simulator/
 │   ├── VlpParser.cs             # VisiLogic project file parser
 │   └── AppLogger.cs             # Diagnostics file logger
 │
-└── stare wersje/                # Historical version archive (max 5 kept)
+└── archive/                     # Historical version archive (max 5 kept)
     └── v0.0.2/
 ```
 
@@ -90,9 +90,9 @@ Unitronics-Vision-PLC-HMI-Simulator/
 The project compiles with Microsoft Visual C# Compiler (`csc.exe`) bundled with .NET Framework 4.0+. No heavy Visual Studio installation is required!
 
 1. Open PowerShell or Command Prompt.
-2. Navigate to `roboczy/`:
+2. Navigate to `src/`:
    ```cmd
-   cd roboczy
+   cd src
    build.bat
    ```
 3. The script compiles the code using `/platform:x86 /target:winexe /optimize+` and outputs the updated `virtualplc.exe` into the root directory while automatically archiving the previous release into `stare wersje/`.
