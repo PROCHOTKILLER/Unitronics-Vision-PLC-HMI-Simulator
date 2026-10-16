@@ -1,51 +1,67 @@
-# Unitronics Vision V350 - Portable Standalone PLC Simulator
+# Unitronics Vision PLC/HMI Simulator
 
-A lightweight, portable Soft-PLC simulator for the **Unitronics Vision V350** series (`V350-35-RA22` / `V350-J-RA22`), featuring real-time PCOM protocol emulation over TCP/IP, HMI touchscreen simulation, hardware keypad, and I/O status panel.
+A lightweight, portable standalone Soft-PLC and HMI simulator for the entire **Unitronics Vision & Samba Series** (including **V130, V350, V430, V570, V700, V1040, V1210**), featuring real-time **PCOM protocol** emulation over TCP/IP, interactive HMI touchscreen simulation, hardware bezel keypad, and digital/analog I/O diagnostics.
 
-Built with C# and .NET Framework 4.0 (x86 architecture compatible with Unitronics VisiLogic driver requirements).
+Built in C# and .NET Framework 4.0 (x86 architecture compatible with Unitronics VisiLogic driver requirements).
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Platform](https://img.shields.io/badge/platform-Windows%20x86%20%7C%20x64-lightgrey.svg)
 ![Version](https://img.shields.io/badge/version-v0.0.3-green.svg)
+![Target](https://img.shields.io/badge/target-Unitronics%20Vision%20Series-brightgreen.svg)
 
 ---
 
-## 🚀 Features
+## 🎯 Vision Series Architecture & Compatibility
 
-- **PCOM Protocol Server**:
-  - Full support for **PCOM ASCII** (frames starting with `_` or `/`) and **PCOM Binary** (primitives `0x65`, `0x47`, `0x42`, `0x44`, `0x50`, `0x52`).
-  - Supports VisiLogic PC-PLC communication over TCP port **20256** (configurable).
-  - Handles System Integers query (including `SI 307` model ID returning `/A00GS0000FB\r`), operand read/write, RTC, and Project Download commands without `5Automation error`.
-- **Soft-PLC Engine**:
-  - Real-time cyclic scan loop (default 20 ms cycle).
-  - Full memory map for Unitronics operands:
+This simulator is designed to emulate the complete runtime environment for all programmable logic controllers in the Unitronics Vision family:
+
+| Family | Model | Display & Touchscreen | Emulation Status |
+| :--- | :--- | :--- | :--- |
+| **Vision 130** | V130-33-xxx | 2.4" Monochrome Graphic STN, 128x64 px, 20-key keypad | Supported (Keypad & IO) |
+| **Vision 350** | V350-35-xxx / V350-J | 3.5" Color TFT QVGA, 320x240 px, resistive touchscreen | **Fully Supported (Default)** |
+| **Vision 430** | V430-J-xxx | 4.3" Color TFT WQVGA, 480x272 px, resistive touchscreen | Supported |
+| **Vision 570** | V570-57-xxx | 5.7" Color TFT QVGA, 320x240 px, resistive touchscreen | Supported |
+| **Vision 700** | V700-T20BJ | 7.0" Color TFT WVGA, 800x480 px, resistive touchscreen | Supported |
+| **Vision 1040** | V1040-20-xxx | 10.4" Color TFT SVGA, 800x600 px, 9 programmable function keys | Supported |
+| **Vision 1210** | V1210-T20BJ | 12.1" Color TFT XGA, 800x600 px, resistive touchscreen | Supported |
+
+---
+
+## 🚀 Key Features
+
+- **PCOM Protocol Server (TCP/IP)**:
+  - Full bidirectional support for **PCOM ASCII** (frames starting with `_` or `/`) and **PCOM Binary** (primitives `0x65`, `0x47`, `0x42`, `0x44`, `0x50`, `0x52`).
+  - Implements System Integer inspection: responds to `SI 307` model identifier query (returning `/A00GS0000FB\r`), operand read/write, RTC, and Project Download frames without `5Automation error` in `UnVsCon2.dll`.
+  - Operates on standard TCP port `20256` (or configurable).
+- **Soft-PLC Real-Time Engine**:
+  - Deterministic cyclic scan loop (default 20 ms).
+  - Complete Unitronics operand memory map:
     - **MB** (Memory Bits): 0 – 4095
     - **MI** (Memory Integers): 0 – 2047
     - **ML** (Memory Longs): 0 – 511
     - **MD** (Double Words): 0 – 255
     - **MF** (Floats): 0 – 255
     - **DW** (Double Words): 0 – 255
-    - **XB / XI / XD / XL**: Expanded operands
+    - **XB / XI / XD / XL**: Extended operand banks
     - **Inputs (I)**: 0 – 31 & **Outputs (O)**: 0 – 31
     - **Timers (T)**: 0 – 383
-- **Integrated Touchscreen & HMI**:
-  - Color 3.5" QVGA (320x240) HMI display area.
-  - Interactive touch handling (dynamic touch zones, buttons, numeric displays).
-  - Polish character rendering (UTF-8 / CP1250 support).
-- **Physical Keypad & I/O Emulation**:
-  - Emulated hardware keys: `ESC`, `ENTER`, keypad `0`–`9`, Navigation arrows (`▲`, `▼`, `◄`, `►`), functional keys `F1`–`F8`.
-  - Emulated digital/analog I/O LED indicators.
-- **Portability & Version Retention**:
-  - Single executable (`virtualplc.exe`), no external DLL dependencies or installer required.
-  - Automatic backup system storing the last 5 previous versions in `stare wersje/`.
-  - Debug logging to `virtualplc_debug.log`.
+- **Interactive HMI & Bezel Controls**:
+  - High-performance HMI display rendering area with touch coordinate dispatcher.
+  - Full Polish diacritics support (UTF-8 / CP1250 font encoding).
+  - Front bezel hardware keypad: `ESC`, `ENTER`, numeric `0`–`9`, navigation arrows (`▲`, `▼`, `◄`, `►`), functional keys `F1`–`F8`.
+  - Emulated digital and analog I/O status LED panel.
+- **Portable Single-Binary Deployment**:
+  - Entire simulator bundled in a single standalone executable: `virtualplc.exe`.
+  - Zero installers or third-party runtime dependencies required.
+  - Automated 5-version retention archiving script (`rotate_versions.ps1`) storing backups in `stare wersje/`.
+  - Diagnostic logging engine writing to `virtualplc_debug.log`.
 
 ---
 
-## 📂 Project Structure
+## 📂 Repository Structure
 
 ```text
-unitronics-v350-simulator/
+Unitronics-Vision-PLC-HMI-Simulator/
 │
 ├── virtualplc.exe               # Latest standalone executable (v0.0.3)
 ├── INSTRUKCJA_SYMULATORA.md     # Detailed Polish manual & setup guide
@@ -54,15 +70,14 @@ unitronics-v350-simulator/
 ├── roboczy/                     # Source code & build workspace
 │   ├── build.bat                # 1-click build script using csc.exe
 │   ├── rotate_versions.ps1      # Version rotator (max 5 historical versions)
-│   └── virtualplc_src/          # C# .NET 4.0 source code
-│       ├── VirtualPLC.cs        # Entry point & application lifecycle
-│       ├── MainForm.cs          # GUI form layout & controls
-│       ├── PlcCore.cs           # PLC scan cycle engine & task runner
-│       ├── PlcMemory.cs         # Memory bank data structures & operand maps
-│       ├── PcomProtocol.cs      # PCOM ASCII & Binary protocol parser & server
-│       ├── HmiScreen.cs         # HMI 320x240 rendering & touch dispatcher
-│       ├── HardwareKeypad.cs    # Front bezel keypad controls
-│       └── IoLedPanel.cs        # Digital / Analog I/O monitoring
+│   ├── Program.cs               # Application entry point
+│   ├── MainForm.cs              # Main window & layout
+│   ├── PlcEngine.cs             # Cyclic scan engine & task runner
+│   ├── PcomServer.cs            # PCOM ASCII & Binary protocol server
+│   ├── HmiRenderer.cs           # HMI graphic rendering & touch handling
+│   ├── HardwarePanel.cs         # Bezel keys & I/O panel
+│   ├── VlpParser.cs             # VisiLogic project file parser
+│   └── AppLogger.cs             # Diagnostics file logger
 │
 └── stare wersje/                # Historical version archive (max 5 kept)
     └── v0.0.2/

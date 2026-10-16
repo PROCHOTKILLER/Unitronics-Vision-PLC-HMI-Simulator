@@ -1,8 +1,8 @@
-# DTR i Instrukcja Obsługi: Samodzielny Symulator PLC/HMI Unitronics Vision V350 v0.0.3 [virtualplc.exe]
+# DTR i Instrukcja Obsługi: Samodzielny Symulator Unitronics Vision PLC/HMI v0.0.3 [virtualplc.exe]
 
 ## 1. Wstęp i Architektura Rozwiązania (Wersja 0.0.3)
 
-Aplikacja **`virtualplc.exe`** (wersja **0.0.3**) jest autonomicznym, natywnym emulatorem sprzętowym sterownika PLC/HMI **Unitronics Vision V350-35-RA22** wraz z przemysłowym modułem rozszerzeń wejść/wyjść **EX-A2X**.
+Aplikacja **`virtualplc.exe`** (wersja **0.0.3**) to autonomiczny, natywny emulator sprzętowy rodziny sterowników **Unitronics Vision PLC/HMI** (w tym m.in. V130, V350, V430, V570, V700, V1040, V1210 z domyślnym profilem V350-35-RA22) wraz z przemysłowym modułem rozszerzeń wejść/wyjść **EX-A2X**.
 
 Aplikacja powstała w 100% jako samodzielny, pojedynczy plik wykonywalny Windows (.NET 4.0 x86), niewymagający instalacji żadnych dodatkowych pakietów, serwerów bazodanowych, środowisk przeglądarkowych ani bibliotek zewnętrznych.
 
