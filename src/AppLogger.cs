@@ -1,44 +1,31 @@
 using System;
-using System.Diagnostics;
 using System.IO;
 using System.Text;
-using System.Threading;
+using System.Diagnostics;
 
 namespace UnitronicsV350Simulator
 {
     /// <summary>
-    /// Bezpieczny wielowatkowy logger zapisu do pliku tekstowego 'virtualplc_debug.log'
-    /// w katalogu, z ktorego aplikacja zostala uruchomiona.
-    /// Obsluguje dynamiczne wlaczanie/wylaczanie oraz poziomy szczegolowosci logowania.
+    /// Global, thread-safe file logger with configurable verbosity levels and category filters.
+    /// Automatically writes diagnostic entries to virtualplc_debug.log in the application directory.
     /// </summary>
     public static class AppLogger
     {
-        private static readonly object _syncLock = new object();
+        private static readonly object _lock = new object();
         private static string _logFilePath;
         private static bool _initialized = false;
 
-        public static bool IsEnabled { get; set; }
-        public static LogVerbosity Verbosity { get; set; }
-        public static bool LogPcomPackets { get; set; }
-        public static bool LogTouchEvents { get; set; }
-
-        static AppLogger()
-        {
-            IsEnabled = true;
-            Verbosity = LogVerbosity.Info;
-            LogPcomPackets = true;
-            LogTouchEvents = true;
-        }
+        // Logging configuration parameters (synchronized with SimulatorConfig)
+        public static bool LoggingEnabled = true;
+        public static LogVerbosity MinimumLevel = LogVerbosity.Info;
+        public static bool LogPcomPackets = true;
+        public static bool LogTouchEvents = true;
 
         public static string LogFilePath
         {
             get
             {
-                if (string.IsNullOrEmpty(_logFilePath))
-                {
-                    string baseDir = AppDomain.CurrentDomain.BaseDirectory;
-                    _logFilePath = Path.Combine(baseDir, "virtualplc_debug.log");
-                }
+                EnsureInitialized();
                 return _logFilePath;
             }
         }
@@ -46,148 +33,149 @@ namespace UnitronicsV350Simulator
         public static void Configure(SimulatorConfig cfg)
         {
             if (cfg == null) return;
-            IsEnabled = cfg.LoggingEnabled;
-            Verbosity = cfg.LoggingVerbosity;
+            LoggingEnabled = cfg.LoggingEnabled;
+            MinimumLevel = cfg.LoggingVerbosity;
             LogPcomPackets = cfg.LogPcomPackets;
             LogTouchEvents = cfg.LogTouchEvents;
-            Info(string.Format("Konfiguracja loggera zaktualizowana: Aktywny={0}, Poziom={1}, PCOM={2}, Touch={3}",
-                IsEnabled, Verbosity, LogPcomPackets, LogTouchEvents));
+            Info(string.Format("Logger configuration updated: Enabled={0}, Level={1}, PCOM={2}, Touch={3}",
+                LoggingEnabled, MinimumLevel, LogPcomPackets, LogTouchEvents));
         }
 
-        public static void Init(string version, string[] args)
+        public static void EnsureInitialized()
         {
-            lock (_syncLock)
+            if (_initialized) return;
+            lock (_lock)
             {
                 if (_initialized) return;
-                _initialized = true;
-
                 try
                 {
-                    // Sprawdz czy plik nie przekracza 15 MB - jesli tak, rotuj do .old.log
-                    if (File.Exists(LogFilePath))
+                    string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+                    _logFilePath = Path.Combine(baseDir, "virtualplc_debug.log");
+
+                    // Rotate log file if it exceeds 15 MB
+                    if (File.Exists(_logFilePath))
                     {
-                        var fi = new FileInfo(LogFilePath);
+                        FileInfo fi = new FileInfo(_logFilePath);
                         if (fi.Length > 15 * 1024 * 1024)
                         {
-                            string backupFile = Path.ChangeExtension(LogFilePath, ".old.log");
-                            if (File.Exists(backupFile)) File.Delete(backupFile);
-                            File.Move(LogFilePath, backupFile);
+                            string oldPath = _logFilePath + ".old";
+                            if (File.Exists(oldPath)) File.Delete(oldPath);
+                            File.Move(_logFilePath, oldPath);
                         }
                     }
 
-                    var sb = new StringBuilder();
-                    sb.AppendLine("========================================================================================");
-                    sb.AppendLine(string.Format(" VirtualPLC - Unitronics Vision PLC/HMI Simulator v{0} - Sesja Debug", version));
-                    sb.AppendLine(string.Format(" Data startu:      {0:yyyy-MM-dd HH:mm:ss.fff}", DateTime.Now));
-                    sb.AppendLine(string.Format(" Katalog startowy: {0}", AppDomain.CurrentDomain.BaseDirectory));
-                    sb.AppendLine(string.Format(" Plik logu:        {0}", LogFilePath));
-                    sb.AppendLine(string.Format(" Srodowisko:       .NET CLR {0} ({1}) | OS: {2}", 
-                        Environment.Version, 
-                        IntPtr.Size == 4 ? "32-bit x86" : "64-bit x64", 
-                        Environment.OSVersion));
-                    sb.AppendLine(string.Format(" Argumenty CLI:    {0}", (args != null && args.Length > 0) ? string.Join(" ", args) : "[brak]"));
-                    sb.AppendLine("========================================================================================");
-
-                    WriteRaw(sb.ToString());
+                    _initialized = true;
+                    WriteRaw("================================================================================");
+                    WriteRaw(string.Format("=== Unitronics Vision PLC/HMI Simulator - Debug Session (v0.0.4) ==="));
+                    WriteRaw(string.Format("=== Start Time: {0:yyyy-MM-dd HH:mm:ss.fff} | PID: {1} | OS: {2} | 64BitProc: {3} ===",
+                        DateTime.Now, Process.GetCurrentProcess().Id, Environment.OSVersion, Environment.Is64BitProcess));
+                    WriteRaw(string.Format("=== Executable Dir: {0} ===", baseDir));
+                    WriteRaw("================================================================================");
                 }
-                catch (Exception ex)
+                catch
                 {
-                    Trace.WriteLine("AppLogger Init error: " + ex.Message);
+                    _logFilePath = Path.Combine(Path.GetTempPath(), "virtualplc_debug.log");
+                    _initialized = true;
                 }
+            }
+        }
+
+        private static void WriteRaw(string line)
+        {
+            if (!LoggingEnabled) return;
+            try
+            {
+                File.AppendAllText(_logFilePath, line + Environment.NewLine, Encoding.UTF8);
+            }
+            catch
+            {
+                // Ignore disk I/O exceptions to avoid interrupting PLC scan execution
+            }
+        }
+
+        public static void Log(string level, string message, LogVerbosity verbosity = LogVerbosity.Info)
+        {
+            EnsureInitialized();
+            if (!LoggingEnabled) return;
+            if (verbosity > MinimumLevel) return;
+
+            lock (_lock)
+            {
+                string line = string.Format("[{0:yyyy-MM-dd HH:mm:ss.fff}] [{1,-5}] [T:{2,2}] {3}",
+                    DateTime.Now, level, System.Threading.Thread.CurrentThread.ManagedThreadId, message);
+                WriteRaw(line);
             }
         }
 
         public static void Info(string message)
         {
-            if (!IsEnabled || Verbosity < LogVerbosity.Info) return;
-            LogEntry("INFO", message);
-        }
-
-        public static void Debug(string message)
-        {
-            if (!IsEnabled || Verbosity < LogVerbosity.Debug) return;
-            LogEntry("DEBUG", message);
+            Log("INFO", message, LogVerbosity.Info);
         }
 
         public static void Warn(string message)
         {
-            if (!IsEnabled || Verbosity < LogVerbosity.Warn) return;
-            LogEntry("WARN", message);
+            Log("WARN", message, LogVerbosity.Warn);
         }
 
-        public static void Error(string message, Exception ex = null)
+        public static void Debug(string message)
         {
-            if (!IsEnabled || Verbosity < LogVerbosity.Error) return;
-            if (ex != null)
+            Log("DEBUG", message, LogVerbosity.Debug);
+        }
+
+        public static void Trace(string message)
+        {
+            Log("TRACE", message, LogVerbosity.Trace);
+        }
+
+        public static void Pcom(string direction, string details)
+        {
+            if (!LogPcomPackets) return;
+            Log("PCOM", direction + ": " + details, LogVerbosity.Debug);
+        }
+
+        public static void Touch(string details)
+        {
+            if (!LogTouchEvents) return;
+            Log("TOUCH", details, LogVerbosity.Debug);
+        }
+
+        public static void Error(string context, Exception ex)
+        {
+            EnsureInitialized();
+            if (!LoggingEnabled) return;
+            lock (_lock)
             {
-                string fullMsg = string.Format("{0}\nWyjatek: {1}: {2}\nSlad stosu (Stack Trace):\n{3}", 
-                    message, ex.GetType().FullName, ex.Message, ex.StackTrace);
-                LogEntry("ERROR", fullMsg);
-            }
-            else
-            {
-                LogEntry("ERROR", message);
-            }
-        }
-
-        public static void LogPcom(string direction, string data)
-        {
-            if (!IsEnabled || !LogPcomPackets || Verbosity < LogVerbosity.Debug) return;
-            LogEntry("PCOM", string.Format("[{0}] {1}", direction, data));
-        }
-
-        public static void LogHmiTouch(int x, int y, string action)
-        {
-            if (!IsEnabled || !LogTouchEvents || Verbosity < LogVerbosity.Debug) return;
-            LogEntry("TOUCH", string.Format("Koordynaty ({0}, {1}) -> {2}", x, y, action));
-        }
-
-        private static void LogEntry(string level, string message)
-        {
-            int threadId = Thread.CurrentThread.ManagedThreadId;
-            string timeStr = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff");
-            string line = string.Format("[{0}] [{1,-5}] [Watek {2:D2}] {3}", timeStr, level, threadId, message);
-
-            lock (_syncLock)
-            {
-                WriteRaw(line + Environment.NewLine);
-            }
-        }
-
-        private static void WriteRaw(string text)
-        {
-            try
-            {
-                using (var fs = new FileStream(LogFilePath, FileMode.Append, FileAccess.Write, FileShare.ReadWrite))
-                using (var sw = new StreamWriter(fs, Encoding.UTF8))
+                StringBuilder sb = new StringBuilder();
+                sb.AppendFormat("[{0:yyyy-MM-dd HH:mm:ss.fff}] [ERROR] [T:{1,2}] {2}",
+                    DateTime.Now, System.Threading.Thread.CurrentThread.ManagedThreadId, context);
+                if (ex != null)
                 {
-                    sw.Write(text);
-                    sw.Flush();
+                    sb.AppendLine();
+                    sb.AppendFormat("    Exception: {0}: {1}", ex.GetType().FullName, ex.Message);
+                    sb.AppendLine();
+                    sb.AppendFormat("    StackTrace: {0}", ex.StackTrace);
+                    if (ex.InnerException != null)
+                    {
+                        sb.AppendLine();
+                        sb.AppendFormat("    InnerException: {0}: {1}", ex.InnerException.GetType().FullName, ex.InnerException.Message);
+                    }
                 }
-            }
-            catch (Exception ex)
-            {
-                Trace.WriteLine("AppLogger WriteRaw failed: " + ex.Message);
+                WriteRaw(sb.ToString());
             }
         }
 
         public static void ClearLog()
         {
-            lock (_syncLock)
+            EnsureInitialized();
+            lock (_lock)
             {
                 try
                 {
-                    using (var fs = new FileStream(LogFilePath, FileMode.Create, FileAccess.Write, FileShare.ReadWrite))
-                    using (var sw = new StreamWriter(fs, Encoding.UTF8))
-                    {
-                        sw.WriteLine(string.Format("[{0:yyyy-MM-dd HH:mm:ss.fff}] [INFO] Plik logu zostal wyczyszczony przez uzytkownika.", DateTime.Now));
-                        sw.Flush();
-                    }
+                    File.WriteAllText(_logFilePath,
+                        string.Format("=== Log file cleared by user ({0:yyyy-MM-dd HH:mm:ss}) ==={1}", DateTime.Now, Environment.NewLine),
+                        Encoding.UTF8);
                 }
-                catch (Exception ex)
-                {
-                    Trace.WriteLine("AppLogger ClearLog failed: " + ex.Message);
-                }
+                catch { }
             }
         }
 
@@ -198,27 +186,28 @@ namespace UnitronicsV350Simulator
 
         public static void OpenLogFile()
         {
+            EnsureInitialized();
             try
             {
-                if (!File.Exists(LogFilePath))
+                if (File.Exists(_logFilePath))
                 {
-                    WriteRaw(string.Format("[{0:yyyy-MM-dd HH:mm:ss.fff}] [INFO] Inicjalizacja pliku logu.\n", DateTime.Now));
+                    Process.Start(new ProcessStartInfo
+                    {
+                        FileName = "notepad.exe",
+                        Arguments = "\"" + _logFilePath + "\"",
+                        UseShellExecute = true
+                    });
                 }
-
-                Process.Start(new ProcessStartInfo
-                {
-                    FileName = LogFilePath,
-                    UseShellExecute = true
-                });
             }
             catch (Exception ex)
             {
-                System.Windows.Forms.MessageBox.Show(
-                    "Nie mozna otworzyc pliku logu:\n" + ex.Message + "\n\nSciezka: " + LogFilePath,
-                    "Blad otwarcia logu", 
-                    System.Windows.Forms.MessageBoxButtons.OK, 
-                    System.Windows.Forms.MessageBoxIcon.Warning);
+                Error("Unable to open log file in Notepad", ex);
             }
+        }
+
+        public static void OpenLogFileInNotepad()
+        {
+            OpenLogFile();
         }
     }
 }

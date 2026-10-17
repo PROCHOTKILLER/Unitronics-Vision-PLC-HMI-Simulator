@@ -1,10 +1,12 @@
 using System;
 using System.Reflection;
+using System.Threading;
 using System.Windows.Forms;
 
-[assembly: AssemblyTitle("VirtualPLC Unitronics Vision PLC/HMI Simulator")]
-[assembly: AssemblyDescription("Bilingual PLC/HMI Simulator for Unitronics Vision Series (V130 - V1210)")]
-[assembly: AssemblyProduct("VirtualPLC")]
+[assembly: AssemblyTitle("Unitronics Vision PLC/HMI Simulator")]
+[assembly: AssemblyDescription("Standalone Unitronics Vision PLC/HMI Hardware Simulator")]
+[assembly: AssemblyCompany("Unitronics Simulator Project")]
+[assembly: AssemblyProduct("Unitronics Vision Virtual PLC")]
 [assembly: AssemblyVersion("0.0.4.0")]
 [assembly: AssemblyFileVersion("0.0.4.0")]
 
@@ -12,86 +14,82 @@ namespace UnitronicsV350Simulator
 {
     static class Program
     {
+        /// <summary>
+        /// Main entry point for the standalone Unitronics Vision PLC/HMI Simulator.
+        /// Initializes configuration, localization, logging, and the Hardware Configuration Wizard.
+        /// </summary>
         [STAThread]
-        static void Main(string[] args)
+        static void Main()
         {
-            // 1. Ładowanie trwałej konfiguracji symulatora
-            var config = SimulatorConfig.Load();
-
-            // 2. Inicjalizacja wielowątkowego loggera do pliku virtualplc_debug.log
-            AppLogger.Init("0.0.4", args);
-            AppLogger.Configure(config);
-            AppLogger.Info("Start aplikacji VirtualPLC v0.0.4");
-
-            // 3. Inicjalizacja języka interfejsu
+            // Load persistent configuration first
+            SimulatorConfig config = SimulatorConfig.Load();
             Localization.SetLanguage(config.Language);
 
-            // Globalne łapanie wyjątków wątku UI i domeny aplikacji
-            Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
-            Application.ThreadException += (s, e) =>
-            {
-                AppLogger.Error("Nieobsłużony wyjątek w wątku głównym UI", e.Exception);
-                MessageBox.Show(
-                    "Wystąpił nieobsługiwany błąd w symulatorze:\n" + e.Exception.Message + 
-                    "\n\nSzczegóły zostały zapisane w pliku:\n" + AppLogger.LogFilePath,
-                    "Błąd VirtualPLC", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            };
+            AppLogger.EnsureInitialized();
+            AppLogger.Configure(config);
+            AppLogger.Info("Initializing Windows Forms environment and exception handlers...");
 
-            AppDomain.CurrentDomain.UnhandledException += (s, e) =>
-            {
-                var ex = e.ExceptionObject as Exception;
-                AppLogger.Error("Krytyczny wyjątek w domenie aplikacji (UnhandledException)", ex);
-            };
+            Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
+            Application.ThreadException += new ThreadExceptionEventHandler(OnThreadException);
+            AppDomain.CurrentDomain.UnhandledException += new UnhandledExceptionEventHandler(OnUnhandledException);
 
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
 
             try
             {
-                // 4. Panel konfiguracji sprzętowej przed uruchomieniem (jeśli włączony w opcjach)
+                // Show Hardware Configuration Wizard on startup (unless disabled in configuration)
                 if (config.ShowConfigOnStartup)
                 {
-                    AppLogger.Info("Wyświetlanie okna konfiguracji sprzętowej na starcie (ShowConfigOnStartup=true)...");
-                    using (var hwDlg = new HardwareConfigDialog(config.Profile, startupMode: true))
+                    AppLogger.Info("Opening startup Hardware Configuration Wizard...");
+                    using (HardwareConfigDialog hwDlg = new HardwareConfigDialog(config.Profile, true))
                     {
-                        var dlgRes = hwDlg.ShowDialog();
-                        if (dlgRes != DialogResult.OK)
+                        DialogResult res = hwDlg.ShowDialog();
+                        if (res == DialogResult.OK)
                         {
-                            AppLogger.Info("Uruchomienie symulatora anulowane przez użytkownika w oknie konfiguracji sprzętowej.");
+                            config.Profile = hwDlg.ResultProfile;
+                            config.ShowConfigOnStartup = hwDlg.ShowOnStartupValue;
+                            config.Save();
+                            AppLogger.Info("Selected hardware profile: " + config.Profile.GetModelFullName());
+                        }
+                        else
+                        {
+                            AppLogger.Info("User closed the Hardware Configuration Wizard - exiting application.");
                             return;
                         }
-
-                        config.Profile = hwDlg.ResultProfile;
-                        config.ShowConfigOnStartup = hwDlg.ShowOnStartupValue;
-                        config.Save();
-                        AppLogger.Info("Profil sprzętowy zatwierdzony na starcie: " + config.Profile.GetModelFullName());
                     }
                 }
 
-                var mainForm = new MainForm(config);
-
-                // Jeśli podano ścieżkę do pliku .vlp w argumentach wiersza poleceń
-                if (args != null && args.Length > 0 && !string.IsNullOrEmpty(args[0]))
-                {
-                    string argPath = args[0].Trim('"', ' ');
-                    if (System.IO.File.Exists(argPath))
-                    {
-                        AppLogger.Info("Automatyczne wczytywanie projektu z parametru CLI: " + argPath);
-                        mainForm.LoadProjectFile(argPath);
-                    }
-                }
-
-                Application.Run(mainForm);
+                AppLogger.Info("Creating MainForm instance and starting main event loop...");
+                Application.Run(new MainForm(config));
+                AppLogger.Info("Application exited cleanly.");
             }
             catch (Exception ex)
             {
-                AppLogger.Error("Błąd podczas wykonywania Application.Run()", ex);
-                throw;
+                AppLogger.Error("Critical exception in Main()", ex);
+                MessageBox.Show(
+                    "Critical simulator error:\n\n" + ex.Message + "\n\nFull error details were saved to:\n" + AppLogger.LogFilePath,
+                    "Unitronics Simulator - Critical Error",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error);
             }
-            finally
-            {
-                AppLogger.Info("Zakończenie pracy aplikacji VirtualPLC v0.0.4 (Clean Exit).");
-            }
+        }
+
+        private static void OnThreadException(object sender, ThreadExceptionEventArgs e)
+        {
+            AppLogger.Error("Unhandled UI thread exception (Application.ThreadException)", e.Exception);
+            MessageBox.Show(
+                "An unexpected UI error occurred:\n\n" + e.Exception.Message +
+                "\n\nDetails were logged to:\n" + AppLogger.LogFilePath,
+                "Unitronics Simulator - Error",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Warning);
+        }
+
+        private static void OnUnhandledException(object sender, UnhandledExceptionEventArgs e)
+        {
+            Exception ex = e.ExceptionObject as Exception;
+            AppLogger.Error("Unhandled application domain exception (IsTerminating=" + e.IsTerminating + ")", ex);
         }
     }
 }

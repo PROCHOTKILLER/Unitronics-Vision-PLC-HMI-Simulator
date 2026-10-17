@@ -64,7 +64,7 @@ The simulator features a native localization architecture:
 - **Polish (PL)** – Complete technical nomenclature, Polish I/O panel labeling, and diagnostic messages.
 - **Switching Languages:**
   - In the Hardware Configuration Wizard (top-right dropdown).
-  - In the simulator main menu: `Settings -> Language / Język -> English / Polski`.
+  - In the simulator main menu: `Settings -> Language -> English / Polish`.
   - In the `Settings -> Simulator Settings...` dialog (General tab).
 - Language switching executes **dynamically in memory without restarting the application**; all menus, toolbars, table headers, ladder trees, and UI captions update immediately.
 
@@ -95,19 +95,14 @@ Accessible via `Settings -> Simulator Settings...` (and quick submenu `Settings 
 
 ## 5. Project Download and Execution with VisiLogic
 
-The simulator provides three direct methods for loading PLC ladder programs and HMI visual screens:
+The simulator provides two direct methods for loading PLC ladder programs and HMI visual screens:
 
 ### Method 1: Loading Any VisiLogic Project File (.vlp / .vlx / .udb)
 From the toolbar, click:
 `[ 📁 Load Project (.vlp) ]` or select from menu: `File -> Load VisiLogic Project (*.vlp, *.vlx, *.udb)...`
 Choose any project file from disk. The integrated Jet 4.0 parser extracts ladder rungs, operand symbol tables, and HMI visual pages.
 
-### Method 2: Quick Load Preset Project
-If a designated project file exists in your standard development path, use the quick toolbar button:
-`[ ⚡ Load Project.vlp ]`
-The application immediately resolves the project, unpacks ladder logic, syncs operand tags, and switches the virtual PLC to **RUN** mode.
-
-### Method 3: Direct Online Download & Monitoring via VisiLogic (PCOM TCP Port 20256)
+### Method 2: Direct Online Download & Monitoring via VisiLogic (PCOM TCP Port 20256)
 The simulator includes a native **Unitronics PCOM TCP** protocol server (supporting ASCII and Binary modes) listening on port `20256`:
 1. Launch **Unitronics VisiLogic**.
 2. Navigate to: `Connection -> Communication & OS`.

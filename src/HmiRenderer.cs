@@ -38,7 +38,7 @@ namespace UnitronicsV350Simulator
         private Bitmap renderBitmap;
         private Graphics g;
 
-        // Stan wirtualnej klawiatury numerycznej (Keypad)
+        // Virtual numeric keypad state
         public bool IsKeypadOpen = false;
         private HmiElementDef keypadTargetElement = null;
         private string keypadCurrentInput = "";
@@ -92,13 +92,13 @@ namespace UnitronicsV350Simulator
             string modelName = spec != null ? spec.ModelName : "V350-35-RA22";
             string displayType = spec != null ? spec.DisplayType : "Color TFT 3.5\"";
 
-            // Tło w stylu przemysłowym OPLC
+            // Industrial OPLC background
             using (var bgBrush = new SolidBrush(Color.FromArgb(12, 25, 44)))
             {
                 g.FillRectangle(bgBrush, 0, 0, ScreenWidth, ScreenHeight);
             }
 
-            // Nagłówek Unitronics
+            // Unitronics header bar
             using (var hdrBrush = new SolidBrush(Color.FromArgb(20, 48, 85)))
             {
                 g.FillRectangle(hdrBrush, 0, 0, ScreenWidth, 30);
@@ -120,7 +120,7 @@ namespace UnitronicsV350Simulator
                 g.DrawString(modelName + " | " + displayType, fontSmall, brushCyan, Math.Max(120, ScreenWidth - 170), 9);
             }
 
-            // Ramka informacyjna
+            // System information frame
             int boxX = 15, boxY = 40, boxW = ScreenWidth - 30, boxH = ScreenHeight - 55;
             using (var boxBrush = new SolidBrush(Color.FromArgb(18, 32, 54)))
             using (var boxPen = new Pen(Color.FromArgb(40, 75, 120), 1))
@@ -142,10 +142,10 @@ namespace UnitronicsV350Simulator
                 int pcomPort = SimulatorConfig.Current != null ? SimulatorConfig.Current.PcomPort : 20256;
                 g.DrawString(string.Format("PCOM Port: TCP/IP Port {0} (PCOM)", pcomPort), fontSys, brushGreen, boxX + 10, boxY + 58);
 
-                // Separator
+                // Divider line
                 g.DrawLine(Pens.SteelBlue, boxX + 10, boxY + 76, boxX + boxW - 10, boxY + 76);
 
-                // Status programu
+                // Program status banner
                 using (var alertFont = new Font("Segoe UI", 9, FontStyle.Bold))
                 using (var alertBrush = new SolidBrush(Color.FromArgb(255, 82, 82)))
                 {
@@ -168,7 +168,7 @@ namespace UnitronicsV350Simulator
         {
             if (plc.Project == null || !plc.Project.Pages.ContainsKey(pageId))
             {
-                // Fallback na pierwszą dostępną stronę
+                // Fallback to the first available page
                 if (plc.Project != null && plc.Project.Pages.Count > 0)
                 {
                     foreach (var p in plc.Project.Pages.Values)
@@ -186,8 +186,8 @@ namespace UnitronicsV350Simulator
 
             var page = plc.Project.Pages[pageId];
 
-            // Tło strony
-            Color bgColor = Color.FromArgb(235, 238, 242); // Standardowy szary HMI Unitronics
+            // Page background
+            Color bgColor = Color.FromArgb(235, 238, 242); // Standard Unitronics HMI gray
             if (page.ColorBack != 0)
             {
                 bgColor = DecodeUnitronicsColor(page.ColorBack);
@@ -197,13 +197,13 @@ namespace UnitronicsV350Simulator
                 g.FillRectangle(bgBrush, 0, 0, ScreenWidth, ScreenHeight);
             }
 
-            // Rysowanie elementów HMI
+            // Draw HMI elements
             foreach (var elm in page.Elements)
             {
                 RenderHmiElement(elm);
             }
 
-            // Pasek statusowy HMI na dole
+            // Bottom HMI status bar
             using (var barBrush = new SolidBrush(Color.FromArgb(40, 44, 52)))
             {
                 g.FillRectangle(barBrush, 0, ScreenHeight - 18, ScreenWidth, 18);
@@ -221,14 +221,13 @@ namespace UnitronicsV350Simulator
         {
             Rectangle rect = new Rectangle(elm.Xs, elm.Ys, Math.Max(elm.Dx, 10), Math.Max(elm.Dy, 10));
 
-            // Obsługa widoczności (VisibleOpAddr)
+            // Optional visibility operand check (VisibleOpAddr)
             if (elm.VisibleOpAddr >= 0 && elm.VisibleOpAddr < plc.MB.Length)
             {
-                // Jeśli bit ukrycia jest aktywny, nie rysujemy
-                // (W VisiLogic zależnie od konfiguracji)
+                // Visibility evaluation depends on project element settings
             }
 
-            // Rozróżnienie elementów
+            // Dispatch by element type
             if (elm.Type == 11)
             {
                 RenderTouchButton(elm, rect);
@@ -243,14 +242,14 @@ namespace UnitronicsV350Simulator
 
             if (elm.Type == 5)
             {
-                // Wykres słupkowy (Bargraph)
+                // Bargraph indicator
                 if (elm.VarType == 24 || (elm.Text != null && elm.Text.StartsWith("BAR_")))
                 {
                     RenderBargraph(elm, rect);
                     return;
                 }
 
-                // Wskaźnik stanu binarnego (wentylatory, grzałki, sekcje, wyjścia cyfrowe O / bity MB)
+                // Binary status indicator (digital outputs O or memory bits MB)
                 string opType = VlpParser.MapOperandTypeNumber(elm.VarOprndType);
                 if (elm.VarType == 2 || opType == "O" || (opType == "MB" && elm.TouchOprndAddr < 0))
                 {
@@ -258,14 +257,14 @@ namespace UnitronicsV350Simulator
                     return;
                 }
 
-                // Standardowy wyświetlacz numeryczny zmiennej
+                // Standard numeric variable display
                 RenderNumericVariable(elm, rect);
                 return;
             }
 
             switch (elm.Type)
             {
-                case 1: // Ramka / Box / Kontener
+                case 1: // Frame / Box / Container
                     using (var fillBrush = new SolidBrush(Color.FromArgb(220, 225, 232)))
                     using (var pen = new Pen(Color.FromArgb(160, 170, 185), 1))
                     {
@@ -274,7 +273,7 @@ namespace UnitronicsV350Simulator
                     }
                     break;
 
-                case 4: // Tekst statyczny
+                case 4: // Static Text
                     using (var font = new Font("Segoe UI", 8, FontStyle.Bold))
                     using (var brush = new SolidBrush(Color.FromArgb(30, 35, 45)))
                     {
@@ -284,7 +283,7 @@ namespace UnitronicsV350Simulator
                     break;
 
                 default:
-                    // Domyślne tło i tekst
+                    // Default fallback text rendering
                     if (!string.IsNullOrEmpty(elm.Text))
                     {
                         using (var font = new Font("Segoe UI", 7, FontStyle.Regular))
@@ -316,7 +315,7 @@ namespace UnitronicsV350Simulator
             }
             else if (isBitActive && (elm.TouchOprndAddr == 40 || (elm.TouchOprndAddr >= 70 && elm.TouchOprndAddr <= 104)))
             {
-                // Aktywny przełącznik testowy/ręczny (np. W1..W6, G1..G6, VFD1, VFD2, MOC 400V, RESUME)
+                // Active toggle/manual switch button state
                 topCol = Color.FromArgb(0, 200, 90);
                 botCol = Color.FromArgb(0, 140, 60);
                 borderCol = Color.FromArgb(0, 255, 120);
@@ -343,7 +342,7 @@ namespace UnitronicsV350Simulator
                 }
             }
 
-            // Tekst na przycisku
+            // Button caption text
             using (var font = new Font("Segoe UI", 7.5f, FontStyle.Bold))
             using (var textBrush = new SolidBrush(textCol))
             {
@@ -395,7 +394,7 @@ namespace UnitronicsV350Simulator
 
         private void RenderBargraph(HmiElementDef elm, Rectangle rect)
         {
-            // Tło wykresu słupkowego
+            // Bargraph background
             using (var bgBrush = new SolidBrush(Color.FromArgb(20, 26, 36)))
             using (var borderPen = new Pen(Color.FromArgb(90, 105, 125), 1))
             {
@@ -403,7 +402,7 @@ namespace UnitronicsV350Simulator
                 g.DrawRectangle(borderPen, rect);
             }
 
-            // Odczyt wartości z PLC
+            // Read register value from PLC
             int val = 0;
             string opType = VlpParser.MapOperandTypeNumber(elm.VarOprndType);
             if (opType == "MI" && elm.VarOprndAddr >= 0 && elm.VarOprndAddr < plc.MI.Length)
@@ -415,29 +414,29 @@ namespace UnitronicsV350Simulator
                 val = plc.ML[elm.VarOprndAddr];
             }
 
-            // Zakres domyślny 0..100 (lub 0..6 dla sekcji grzałek)
+            // Default range 0..100 (or 0..6 for stage indicators)
             int minVal = 0;
             int maxVal = 100;
-            if (elm.Text != null && elm.Text.Contains("GRZ")) maxVal = 6;
+            if (elm.Text != null && elm.Text.Contains("STG")) maxVal = 6;
             else if (elm.VarOprndAddr == 50) maxVal = 6;
 
             int clampedVal = Math.Max(minVal, Math.Min(val, maxVal));
             double ratio = (maxVal > minVal) ? ((double)(clampedVal - minVal) / (maxVal - minVal)) : 0;
             int barHeight = (int)((rect.Height - 4) * ratio);
 
-            // Wybór koloru słupka w zależności od typu pomiaru
+            // Select bar fill color based on tag category
             Color barColorTop, barColorBot;
             if (elm.Text != null && (elm.Text.Contains("BAR_T") || elm.Text.Contains("TEMP")))
             {
                 barColorTop = Color.FromArgb(255, 80, 50);
                 barColorBot = Color.FromArgb(200, 30, 20);
             }
-            else if (elm.Text != null && (elm.Text.Contains("BAR_RH") || elm.Text.Contains("WILG")))
+            else if (elm.Text != null && (elm.Text.Contains("BAR_RH") || elm.Text.Contains("HUM")))
             {
                 barColorTop = Color.FromArgb(0, 210, 255);
                 barColorBot = Color.FromArgb(0, 110, 200);
             }
-            else if (elm.Text != null && (elm.Text.Contains("VFD") || elm.Text.Contains("WENT")))
+            else if (elm.Text != null && (elm.Text.Contains("VFD") || elm.Text.Contains("FAN")))
             {
                 barColorTop = Color.FromArgb(0, 230, 118);
                 barColorBot = Color.FromArgb(0, 140, 70);
@@ -457,7 +456,7 @@ namespace UnitronicsV350Simulator
                 }
             }
 
-            // Poziome linie podziałki (25%, 50%, 75%)
+            // Horizontal scale grid lines (25%, 50%, 75%)
             using (var gridPen = new Pen(Color.FromArgb(60, 75, 95), 1))
             {
                 for (int pct = 25; pct <= 75; pct += 25)
@@ -467,7 +466,7 @@ namespace UnitronicsV350Simulator
                 }
             }
 
-            // Podpis słupka lub wartość
+            // Bar numeric label
             using (var font = new Font("Segoe UI", 6.5f, FontStyle.Bold))
             using (var textBrush = new SolidBrush(Color.White))
             {
@@ -478,7 +477,7 @@ namespace UnitronicsV350Simulator
 
         private void RenderNumericVariable(HmiElementDef elm, Rectangle rect)
         {
-            // Tło pola edycyjnego (białe z ciemniejszą obwódką)
+            // Numeric field background (white with dark border)
             using (var bgBrush = new SolidBrush(Color.White))
             using (var pen = new Pen(Color.FromArgb(130, 140, 155), 1))
             {
@@ -486,7 +485,7 @@ namespace UnitronicsV350Simulator
                 g.DrawRectangle(pen, rect);
             }
 
-            // Pobranie wartości rejestru z PLC
+            // Retrieve register value from PLC
             int val = 0;
             string opType = VlpParser.MapOperandTypeNumber(elm.VarOprndType);
             if (opType == "MI" && elm.VarOprndAddr >= 0 && elm.VarOprndAddr < plc.MI.Length)
@@ -533,13 +532,13 @@ namespace UnitronicsV350Simulator
 
         private void RenderKeypadOverlay()
         {
-            // Półprzezroczyste przyciemnienie tła
+            // Semi-transparent background dim overlay
             using (var dimBrush = new SolidBrush(Color.FromArgb(180, 0, 0, 0)))
             {
                 g.FillRectangle(dimBrush, 0, 0, ScreenWidth, ScreenHeight);
             }
 
-            // Okno klawiatury numerycznej
+            // Numeric keypad modal window
             int kw = 180, kh = 200;
             int kx = (ScreenWidth - kw) / 2;
             int ky = (ScreenHeight - kh) / 2;
@@ -551,14 +550,14 @@ namespace UnitronicsV350Simulator
                 g.DrawRectangle(boxPen, kx, ky, kw, kh);
             }
 
-            // Tytuł
+            // Keypad title
             using (var fontHdr = new Font("Segoe UI", 8, FontStyle.Bold))
             using (var brushHdr = new SolidBrush(Color.White))
             {
-                g.DrawString("EDYCJA WARTOŚCI (KEYPAD)", fontHdr, brushHdr, kx + 10, ky + 6);
+                g.DrawString("VALUE ENTRY (KEYPAD)", fontHdr, brushHdr, kx + 10, ky + 6);
             }
 
-            // Pole wartości bieżącej
+            // Current input value field
             int fieldY = ky + 25;
             using (var fieldBrush = new SolidBrush(Color.Black))
             using (var fieldPen = new Pen(Color.FromArgb(0, 200, 255), 1))
@@ -573,7 +572,7 @@ namespace UnitronicsV350Simulator
                 g.DrawString(keypadCurrentInput + "_", valFont, valBrush, kx + 15, fieldY + 2);
             }
 
-            // Klawisze 1..9, 0, CLR, ENTER, CANCEL
+            // Keypad buttons 0..9, CLR, ESC, ENT, OK
             string[] keys = new string[] {
                 "7", "8", "9", "CLR",
                 "4", "5", "6", "ESC",
@@ -611,34 +610,32 @@ namespace UnitronicsV350Simulator
         {
             string txt = (btnText ?? "").Trim().ToUpper();
 
-            // 1. Po adresie TouchOprndAddr (MB 210..220)
+            // 1. By TouchOprndAddr (MB 210..220 navigation bits)
             switch (touchAddr)
             {
-                case 210: return 1;  // Start-Up / Główny
-                case 211: return 36; // L2: Kontrola Procesu
-                case 212: return 40; // L3: Receptury
-                case 213: return 41; // L3: Wentylacja i Rekuperacja
-                case 214: return 42; // L4: Alarmy
-                case 215: return 43; // L4: Logowanie / Uprawnienia / Dostęp
-                case 216: return 44; // L4: Serwis Specjalny
-                case 217: return 45; // L4: Serwis Testy Ręczne Wyjść
-                case 218: return 37; // L2: Wykres T / RH
-                case 219: return 38; // L2: Wykres T / Grzałki
-                case 220: return 39; // L2: Wykres Wentylacja
+                case 210: return 1;  // Start-Up / Main Page
+                case 211: return 36; // Process Control
+                case 212: return 40; // Recipes
+                case 213: return 41; // Ventilation & Air Handling
+                case 214: return 42; // Alarms
+                case 215: return 43; // Access / Login
+                case 216: return 44; // Service Parameters
+                case 217: return 45; // Manual I/O Test
+                case 218: return 37; // Chart 1
+                case 219: return 38; // Chart 2
+                case 220: return 39; // Chart 3
             }
 
-            // 2. Po tekście przycisku
-            if (txt.Contains("GLOWNY") || txt.Contains("STARTUP") || txt.Contains("START-UP")) return 1;
-            if (txt.Contains("PROCES") || txt.Contains("KONTROLA")) return 36;
-            if (txt.Contains("RECEPT")) return 40;
-            if (txt.Contains("WENTYL")) return 41;
+            // 2. By button caption text
+            if (txt.Contains("MAIN") || txt.Contains("HOME") || txt.Contains("STARTUP") || txt.Contains("START-UP")) return 1;
+            if (txt.Contains("PROCESS") || txt.Contains("CONTROL")) return 36;
+            if (txt.Contains("RECIPE")) return 40;
+            if (txt.Contains("VENT") || txt.Contains("FAN")) return 41;
             if (txt.Contains("ALARM")) return 42;
-            if (txt.Contains("DOSTEP") || txt.Contains("LOGOW")) return 43;
-            if (txt.Contains("SERWIS >>")) return 44;
-            if (txt.Contains("TESTY")) return 45;
+            if (txt.Contains("ACCESS") || txt.Contains("LOGIN")) return 43;
+            if (txt.Contains("SERVICE >>")) return 44;
+            if (txt.Contains("TEST")) return 45;
             if (txt.Contains("T / RH") || txt.Contains("T/RH")) return 37;
-            if (txt.Contains("T / GRZ") || txt.Contains("T/GRZ")) return 38;
-            if (txt.Contains("WENT >>") || txt.Contains("T/WENT")) return 39;
 
             return 0;
         }
@@ -665,30 +662,30 @@ namespace UnitronicsV350Simulator
                         elm.IsPressed = true;
                         int touchAddr = elm.TouchOprndAddr;
 
-                        // 1. Sprawdzenie nawigacji ekranowej
+                        // 1. Check screen navigation mapping
                         int targetPage = GetTargetDisplayForButton(touchAddr, elm.Text);
                         if (targetPage > 0)
                         {
                             plc.SI[9] = (short)targetPage;
-                            plc.Log(string.Format("HMI Dotyk: Przejście do ekranu P{0} ({1})", targetPage, elm.Text));
+                            plc.Log(string.Format("HMI Touch: Switched to screen P{0} ({1})", targetPage, elm.Text));
                         }
 
-                        // 2. Obsługa bitu dotykowego w PLC
+                        // 2. Update touch bit in PLC memory
                         if (touchAddr >= 0 && touchAddr < plc.MB.Length)
                         {
-                            // A. Przyciski typu toggle na ekranach serwisowych (MB 40, MB 90..104, MB 70..73, MB 80..82)
+                            // A. Toggle buttons on manual/service pages (MB 40, MB 70..104)
                             if (touchAddr == 40 || (touchAddr >= 70 && touchAddr <= 104))
                             {
                                 plc.MB[touchAddr] = !plc.MB[touchAddr];
-                                plc.Log(string.Format("HMI Dotyk [Toggle]: MB{0} = {1} ({2})", touchAddr, plc.MB[touchAddr] ? "ON" : "OFF", elm.Text));
+                                plc.Log(string.Format("HMI Touch [Toggle]: MB{0} = {1} ({2})", touchAddr, plc.MB[touchAddr] ? "ON" : "OFF", elm.Text));
                             }
                             else
                             {
-                                // B. Przyciski chwilowe (START MB22, STOP MB20, PAUZA MB21, KWITUJ MB23, KROK MB24, itp.)
+                                // B. Momentary pushbuttons
                                 plc.MB[touchAddr] = true;
-                                plc.Log(string.Format("HMI Dotyk [Impuls]: MB{0} = TRUE ({1})", touchAddr, elm.Text));
+                                plc.Log(string.Format("HMI Touch [Pulse]: MB{0} = TRUE ({1})", touchAddr, elm.Text));
 
-                                // Gwarantowany minimalny impuls (150 ms) w tle, aby pętla PLC na pewno go przetworzyła
+                                // Guarantee a minimum 150 ms pulse so the PLC scan loop captures it
                                 int capturedAddr = touchAddr;
                                 System.Threading.ThreadPool.QueueUserWorkItem(_ =>
                                 {
@@ -703,7 +700,7 @@ namespace UnitronicsV350Simulator
                     }
                     else if (elm.Type == 5 && elm.VarKeyPadEntry == 1)
                     {
-                        // Otwarcie klawiatury numerycznej
+                        // Open numeric keypad overlay
                         IsKeypadOpen = true;
                         keypadTargetElement = elm;
                         keypadCurrentInput = "";
@@ -726,7 +723,7 @@ namespace UnitronicsV350Simulator
                     int touchAddr = elm.TouchOprndAddr;
                     if (touchAddr >= 0 && touchAddr < plc.MB.Length)
                     {
-                        // Dla przycisków toggle nie resetujemy stanu przy TouchUp
+                        // Do not reset toggle buttons on TouchUp
                         if (touchAddr != 40 && !(touchAddr >= 70 && touchAddr <= 104))
                         {
                             plc.MB[touchAddr] = false;
@@ -808,12 +805,12 @@ namespace UnitronicsV350Simulator
                 if (opType == "MI" && keypadTargetElement.VarOprndAddr >= 0 && keypadTargetElement.VarOprndAddr < plc.MI.Length)
                 {
                     plc.MI[keypadTargetElement.VarOprndAddr] = (short)val;
-                    plc.Log(string.Format("Zmieniono nastawę MI{0} na {1}", keypadTargetElement.VarOprndAddr, val));
+                    plc.Log(string.Format("Updated register MI{0} to {1}", keypadTargetElement.VarOprndAddr, val));
                 }
                 else if (opType == "ML" && keypadTargetElement.VarOprndAddr >= 0 && keypadTargetElement.VarOprndAddr < plc.ML.Length)
                 {
                     plc.ML[keypadTargetElement.VarOprndAddr] = val;
-                    plc.Log(string.Format("Zmieniono nastawę ML{0} na {1}", keypadTargetElement.VarOprndAddr, val));
+                    plc.Log(string.Format("Updated register ML{0} to {1}", keypadTargetElement.VarOprndAddr, val));
                 }
             }
         }

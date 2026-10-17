@@ -12,7 +12,7 @@ namespace UnitronicsV350Simulator
         {
             if (string.IsNullOrEmpty(filePath) || !File.Exists(filePath))
             {
-                throw new FileNotFoundException("Nie znaleziono pliku projektu: " + filePath);
+                throw new FileNotFoundException("Project file not found: " + filePath);
             }
 
             string ext = Path.GetExtension(filePath).ToLower();
@@ -26,13 +26,13 @@ namespace UnitronicsV350Simulator
             }
             else
             {
-                throw new NotSupportedException("Nieobsługiwany format pliku: " + ext + ". Wymagany plik .vlp, .vlx lub .udb.");
+                throw new NotSupportedException("Unsupported file format: " + ext + ". Expected .vlp, .vlx, or .udb.");
             }
         }
 
         private static LoadedProject LoadFromVlpZip(string vlpPath, Action<string> log)
         {
-            log("Rozpakowywanie kontenera projektu VisiLogic: " + Path.GetFileName(vlpPath));
+            log("Extracting VisiLogic project container: " + Path.GetFileName(vlpPath));
             string tempDir = Path.Combine(Path.GetTempPath(), "V350_VLP_" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(tempDir);
 
@@ -42,7 +42,7 @@ namespace UnitronicsV350Simulator
                 string udbPath = Path.Combine(tempDir, "Current_OPLC.udb");
                 if (!File.Exists(udbPath))
                 {
-                    // Szukamy dowolnego .udb w wypakowanych plikach
+                    // Search for any .udb file inside the extracted archive
                     var udbs = Directory.GetFiles(tempDir, "*.udb", SearchOption.AllDirectories);
                     if (udbs.Length > 0)
                     {
@@ -50,7 +50,7 @@ namespace UnitronicsV350Simulator
                     }
                     else
                     {
-                        throw new FileNotFoundException("Wewnątrz archiwum .vlp nie znaleziono bazy Current_OPLC.udb!");
+                        throw new FileNotFoundException("Current_OPLC.udb database was not found inside the .vlp archive!");
                     }
                 }
 
@@ -74,7 +74,7 @@ namespace UnitronicsV350Simulator
 
         private static LoadedProject LoadFromUdbDatabase(string udbPath, Action<string> log)
         {
-            log("Nawiązywanie połączenia z bazą Jet 4.0: " + Path.GetFileName(udbPath));
+            log("Connecting to Jet 4.0 database: " + Path.GetFileName(udbPath));
             var project = new LoadedProject();
             project.ProjectName = Path.GetFileNameWithoutExtension(udbPath);
             project.FilePath = udbPath;
@@ -84,28 +84,28 @@ namespace UnitronicsV350Simulator
             using (OleDbConnection conn = new OleDbConnection(connStr))
             {
                 conn.Open();
-                log("Pomyślnie uwierzytelniono z hasłem Unitronics (UniOpenSesame).");
+                log("Authenticated successfully with Unitronics Jet 4.0 database.");
 
-                // 1. Odczyt konfiguracji sprzętowej HW_Elements
+                // 1. Read hardware configuration from HW_Elements
                 ReadHardwareConfig(conn, project, log);
 
-                // 2. Odczyt podprogramów LdrFunctions
+                // 2. Read ladder subroutines from LdrFunctions
                 ReadSubroutines(conn, project, log);
 
-                // 3. Odczyt szczebli drabinki LdrStrips
+                // 3. Read ladder rungs from LdrStrips
                 ReadLadderStrips(conn, project, log);
 
-                // 4. Odczyt elementów drabinki LdrElements i powiązań LdrElmsOprs
+                // 4. Read ladder elements from LdrElements and bindings from LdrElmsOprs
                 ReadLadderElements(conn, project, log);
 
-                // 5. Odczyt ekranów HMI Pages oraz elementów HMI_Elements
+                // 5. Read HMI displays from Pages and elements from HMI_Elements
                 ReadHmiPagesAndElements(conn, project, log);
 
-                // 6. Odczyt nazw operandów LdrOperands / tblWatches
+                // 6. Read operand symbol descriptions from LdrOperands / tblWatches
                 ReadOperandNames(conn, project, log);
             }
 
-            log(string.Format("Załadowano projekt: {0} podprogramów, {1} ekranów HMI, {2} opisów zmiennych.",
+            log(string.Format("Project loaded: {0} subroutines, {1} HMI displays, {2} operand descriptions.",
                 project.Subroutines.Count, project.Pages.Count, project.OperandDescriptions.Count));
 
             return project;
@@ -135,11 +135,11 @@ namespace UnitronicsV350Simulator
                         }
                     }
                 }
-                log("Wykryto konfigurację sprzętową: CPU " + project.PlcModel + ", moduły: " + string.Join(", ", project.Modules.ToArray()));
+                log("Detected hardware configuration: CPU " + project.PlcModel + ", modules: " + string.Join(", ", project.Modules.ToArray()));
             }
             catch (Exception ex)
             {
-                log("Informacja o HW_Elements: " + ex.Message);
+                log("HW_Elements info: " + ex.Message);
             }
         }
 
@@ -160,11 +160,11 @@ namespace UnitronicsV350Simulator
                         }
                     }
                 }
-                log("Załadowano listę podprogramów (" + project.Subroutines.Count + ").");
+                log("Loaded subroutine list (" + project.Subroutines.Count + ").");
             }
             catch (Exception ex)
             {
-                log("Błąd odczytu LdrFunctions: " + ex.Message);
+                log("Error reading LdrFunctions: " + ex.Message);
             }
         }
 
@@ -202,7 +202,7 @@ namespace UnitronicsV350Simulator
             }
             catch (Exception ex)
             {
-                log("Błąd odczytu LdrStrips: " + ex.Message);
+                log("Error reading LdrStrips: " + ex.Message);
             }
         }
 
@@ -210,7 +210,7 @@ namespace UnitronicsV350Simulator
         {
             try
             {
-                // Mapa tymczasowa StripId -> LadderRung
+                // Temporary lookup map StripId -> LadderRung
                 var rungMap = new Dictionary<int, LadderRung>();
                 foreach (var sub in project.Subroutines.Values)
                 {
@@ -220,7 +220,7 @@ namespace UnitronicsV350Simulator
                     }
                 }
 
-                // Odczyt elementów drabinki
+                // Read ladder elements
                 var elementMap = new Dictionary<int, LadderElement>();
                 using (var cmd = conn.CreateCommand())
                 {
@@ -260,7 +260,7 @@ namespace UnitronicsV350Simulator
                     }
                 }
 
-                // Odczyt powiązań LdrElmsOprs
+                // Read operand bindings from LdrElmsOprs
                 using (var cmd2 = conn.CreateCommand())
                 {
                     cmd2.CommandText = "SELECT ElmntID, Elmnt_Oprnd_Type, Elmnt_Oprnd_Adrs FROM LdrElmsOprs ORDER BY ElmntID";
@@ -288,7 +288,7 @@ namespace UnitronicsV350Simulator
             }
             catch (Exception ex)
             {
-                log("Błąd odczytu LdrElements/LdrElmsOprs: " + ex.Message);
+                log("Error reading LdrElements/LdrElmsOprs: " + ex.Message);
             }
         }
 
@@ -296,7 +296,7 @@ namespace UnitronicsV350Simulator
         {
             try
             {
-                // Odczyt stron Pages
+                // Read HMI pages from Pages table
                 using (var cmd = conn.CreateCommand())
                 {
                     cmd.CommandText = "SELECT Id, Description, ColorBack FROM Pages ORDER BY Id";
@@ -318,7 +318,7 @@ namespace UnitronicsV350Simulator
                     }
                 }
 
-                // Odczyt elementów HMI_Elements
+                // Read HMI elements from HMI_Elements table
                 using (var cmd2 = conn.CreateCommand())
                 {
                     cmd2.CommandText = @"SELECT ID, DisplayID, Type, VarType, Text, Xs, Ys, Dx, Dy, 
@@ -355,18 +355,18 @@ namespace UnitronicsV350Simulator
                         }
                     }
                 }
-                log("Załadowano ekrany HMI (" + project.Pages.Count + " stron).");
+                log("Loaded HMI displays (" + project.Pages.Count + " pages).");
             }
             catch (Exception ex)
             {
-                log("Błąd odczytu HMI: " + ex.Message);
+                log("Error reading HMI tables: " + ex.Message);
             }
         }
 
         private static void ReadOperandNames(OleDbConnection conn, LoadedProject project, Action<string> log)
         {
             int count = 0;
-            // 1. Podstawowe źródło w bazie Jet 4.0 VisiLogic: tabela LdrOperands
+            // 1. Primary operand description table in VisiLogic Jet 4.0 DB: LdrOperands
             try
             {
                 using (var cmd = conn.CreateCommand())
@@ -393,14 +393,14 @@ namespace UnitronicsV350Simulator
                         }
                     }
                 }
-                log(string.Format("Załadowano {0} opisów zmiennych z tabeli LdrOperands (MB, MI, ML, I, O, T, SB, SI).", count));
+                log(string.Format("Loaded {0} operand descriptions from LdrOperands (MB, MI, ML, I, O, T, SB, SI).", count));
             }
             catch (Exception ex)
             {
-                log("Informacja o LdrOperands: " + ex.Message);
+                log("LdrOperands info: " + ex.Message);
             }
 
-            // 2. Dopełnienie z tblWatches (jeśli tabela istnieje w projekcie)
+            // 2. Fallback/supplement from tblWatches (if present in the project database)
             try
             {
                 using (var cmd = conn.CreateCommand())
@@ -425,13 +425,15 @@ namespace UnitronicsV350Simulator
             }
             catch { }
 
-            // 3. Dopełnienie z pliku CSV
+            // 3. Optional supplement from adjacent operands.csv file if present
             TryLoadCsvOperands(project);
         }
 
         private static void TryLoadCsvOperands(LoadedProject project)
         {
-            string csvPath = "wygenerowane_pliki_projektu\\Visilogic_operands_complete.csv";
+            if (string.IsNullOrEmpty(project.FilePath)) return;
+            string dir = Path.GetDirectoryName(project.FilePath) ?? "";
+            string csvPath = Path.Combine(dir, "operands.csv");
             if (File.Exists(csvPath))
             {
                 try

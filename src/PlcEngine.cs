@@ -107,7 +107,7 @@ namespace UnitronicsV350Simulator
 
     public class PlcEngine
     {
-        // Operandy cyfrowe i analogowe
+        // Digital and analog operands
         public bool[] I = new bool[128];
         public bool[] O = new bool[128];
         public bool[] MB = new bool[4096];
@@ -118,14 +118,14 @@ namespace UnitronicsV350Simulator
         public TimerState[] T = new TimerState[256];
         public CounterState[] C = new CounterState[32];
 
-        // Operandy systemowe
+        // System operands
         public bool[] SB = new bool[512];
         public short[] SI = new short[512];
 
-        // Wyjścia analogowe (0..10V lub 4..20mA)
+        // Analog outputs (0..10V or 4..20mA scaled to volts)
         public double[] AO_Volts = new double[8];
 
-        // Stan poprzedni dla wykrywania zboczy
+        // Previous scan state for rising/falling edge detection
         private bool[] prev_I = new bool[128];
         private bool[] prev_MB = new bool[4096];
         private bool[] prev_SB = new bool[512];
@@ -150,7 +150,7 @@ namespace UnitronicsV350Simulator
 
         public PlcEngine(HardwareProfile profile = null)
         {
-            Profile = profile ?? (SimulatorConfig.Current != null && SimulatorConfig.Current.HardwareProfile != null ? SimulatorConfig.Current.HardwareProfile : HardwareProfile.CreateDefaultProfile());
+            Profile = profile ?? (SimulatorConfig.Current != null && SimulatorConfig.Current.Profile != null ? SimulatorConfig.Current.Profile : HardwareProfile.CreateDefaultProfile());
             ResetMemory();
         }
 
@@ -159,7 +159,7 @@ namespace UnitronicsV350Simulator
             if (newProfile != null)
             {
                 Profile = newProfile;
-                Log(string.Format("Zaktualizowano profil sprzetowy PLC: {0}", Profile.GetModelFullName()));
+                Log(string.Format("Updated PLC hardware profile: {0}", Profile.GetModelFullName()));
             }
         }
 
@@ -189,9 +189,9 @@ namespace UnitronicsV350Simulator
                 C[i] = new CounterState();
             }
 
-            // Domyślne wartości systemowe
-            SB[7] = true;   // Bateria podtrzymująca OK
-            SI[9] = 1;      // Domyślna strona HMI (Start-up = 1)
+            // Default system operand values
+            SB[7] = true;   // Backup battery OK
+            SI[9] = 1;      // Default HMI page (Start-Up = 1)
             ScanCount = 0;
             isFirstScan = true;
             clock1s.Restart();
@@ -202,22 +202,22 @@ namespace UnitronicsV350Simulator
         {
             if (!HasProgramLoaded)
             {
-                Log("UWAGA: Nie można uruchomić PLC - brak załadowanego programu z VisiLogic!");
+                Log("WARNING: Cannot start PLC - no VisiLogic project loaded!");
                 return;
             }
             State = PlcRunState.RUN;
             isFirstScan = true;
             SB[0] = true; // Power-Up bit
             SB[1] = true; // First scan bit
-            Log("PLC przeszedł w tryb RUN (wykonywanie drabinki rozpoczęte).");
+            Log("PLC switched to RUN mode (ladder execution started).");
         }
 
         public void Stop()
         {
             State = PlcRunState.STOP;
-            Array.Clear(O, 0, O.Length); // Wyłączenie fizycznych wyjść w trybie STOP
+            Array.Clear(O, 0, O.Length); // Turn off physical outputs in STOP mode
             Array.Clear(AO_Volts, 0, AO_Volts.Length);
-            Log("PLC zatrzymany (tryb STOP - wyjścia odłączone).");
+            Log("PLC stopped (STOP mode - outputs de-energized).");
             if (OnScanCompleted != null) OnScanCompleted();
         }
 
@@ -225,7 +225,7 @@ namespace UnitronicsV350Simulator
         {
             Stop();
             ResetMemory();
-            Log("Wykonano reset sterownika PLC (Warm Restart).");
+            Log("PLC controller reset executed (Warm Restart).");
             if (OnScanCompleted != null) OnScanCompleted();
         }
 
@@ -235,13 +235,13 @@ namespace UnitronicsV350Simulator
 
             if (State != PlcRunState.RUN || !HasProgramLoaded)
             {
-                // W trybie STOP lub bez programu: nie wykonujemy drabinki
+                // In STOP mode or without a loaded program: skip ladder execution
                 scanStopwatch.Stop();
                 LastScanDurationMs = 0.1;
                 return;
             }
 
-            // Aktualizacja zegarów systemowych SB 2 (1s) i SB 3 (100ms)
+            // Update system clock bits SB 2 (1s pulse) and SB 3 (100ms pulse)
             if (clock1s.ElapsedMilliseconds >= 1000)
             {
                 SB[2] = !SB[2];
@@ -253,7 +253,7 @@ namespace UnitronicsV350Simulator
                 clock100ms.Restart();
             }
 
-            // Obsługa First Scan bit SB 1
+            // Handle First Scan bit SB 1
             if (isFirstScan)
             {
                 SB[1] = true;
@@ -264,7 +264,7 @@ namespace UnitronicsV350Simulator
                 SB[1] = false;
             }
 
-            // 1. Aktualizacja timerów
+            // 1. Update timers
             for (int tIdx = 0; tIdx < T.Length; tIdx++)
             {
                 var tmr = T[tIdx];
@@ -278,16 +278,16 @@ namespace UnitronicsV350Simulator
                 }
             }
 
-            // 2. Wykonanie drabinki załadowanego projektu
+            // 2. Execute loaded ladder program
             ExecuteLadderProgram();
 
-            // 3. Po pierwszym cyklu wyłączamy First Scan
+            // 3. Clear First Scan flag after the first scan cycle completes
             if (isFirstScan)
             {
                 isFirstScan = false;
             }
 
-            // 4. Kopiowanie stanu do prev_ dla wykrywania zboczy
+            // 4. Copy current state to prev_ arrays for edge detection
             Array.Copy(I, prev_I, I.Length);
             Array.Copy(MB, prev_MB, MB.Length);
             Array.Copy(SB, prev_SB, SB.Length);
@@ -307,8 +307,7 @@ namespace UnitronicsV350Simulator
         {
             if (Project == null || Project.Subroutines == null) return;
 
-            // Wykonujemy najpierw podprogram główny _Start lub 00_Main jeśli istnieje,
-            // a potem wywołane lub wszystkie zdefiniowane podprogramy
+            // Execute defined subroutines in sequence
             foreach (var kvp in Project.Subroutines)
             {
                 var sub = kvp.Value;
@@ -330,12 +329,12 @@ namespace UnitronicsV350Simulator
         {
             if (rung.Elements == null || rung.Elements.Count == 0) return;
 
-            // Ewaluacja szczebla drabinkowego:
-            // Standardowy model Unitronics: Warunki (styki, porównania) znajdują się z lewej strony (Xs < 70).
-            // Cewki, Store, wywołania funkcji znajdują się z prawej strony (Xs >= 70 lub ElmntType cewek/akcji).
+            // Ladder rung evaluation:
+            // Standard Unitronics model: Condition elements (contacts, comparisons) are evaluated first;
+            // Coils, Store blocks, Math operations, and Subroutine calls execute based on power flow.
             bool powerFlow = true;
 
-            // 1. Sprawdzanie styków i warunków (wejścia szczebla)
+            // 1. Evaluate contacts and comparison conditions
             foreach (var elm in rung.Elements)
             {
                 if (IsConditionElement(elm.ElementType))
@@ -349,7 +348,7 @@ namespace UnitronicsV350Simulator
                 }
             }
 
-            // 2. Wykonanie akcji / cewek szczebla jeśli warunek jest spełniony (lub dla cewek typu Direct/Inverted)
+            // 2. Execute actions / coils for this rung
             foreach (var elm in rung.Elements)
             {
                 if (IsActionElement(elm.ElementType))
@@ -361,13 +360,13 @@ namespace UnitronicsV350Simulator
 
         private bool IsConditionElement(int type)
         {
-            // 200..203 styki, 300..305 porównania
+            // 200..203 contacts, 300..305 comparison blocks
             return (type >= 200 && type <= 203) || (type >= 300 && type <= 305);
         }
 
         private bool IsActionElement(int type)
         {
-            // 204..207, 212 cewki, 400..407 matma, 601 Store, 900 Call, 1300 Timer
+            // 204..207, 212 coils, 400..407 math, 601 Store, 900 Call, 1300 Timer
             return (type >= 204 && type <= 212) || (type >= 400 && type <= 407) || type == 601 || type == 900 || type == 1300;
         }
 
@@ -384,10 +383,10 @@ namespace UnitronicsV350Simulator
                 case 201: // Inverted Contact NC
                     return !GetBitValue(op);
 
-                case 202: // Rise Contact [P]
+                case 202: // Positive Transition Contact [P]
                     return GetBitValue(op) && !GetPrevBitValue(op);
 
-                case 203: // Fall Contact [N]
+                case 203: // Negative Transition Contact [N]
                     return !GetBitValue(op) && GetPrevBitValue(op);
 
                 case 300: // Greater Than (A > B)
@@ -395,7 +394,7 @@ namespace UnitronicsV350Simulator
                         return GetNumericValue(elm.Operands[0]) > GetNumericValue(elm.Operands[1]);
                     return false;
 
-                case 301: // Greater Equal (A >= B)
+                case 301: // Greater Than or Equal (A >= B)
                     if (elm.Operands.Count >= 2)
                         return GetNumericValue(elm.Operands[0]) >= GetNumericValue(elm.Operands[1]);
                     return false;
@@ -410,7 +409,7 @@ namespace UnitronicsV350Simulator
                         return GetNumericValue(elm.Operands[0]) != GetNumericValue(elm.Operands[1]);
                     return false;
 
-                case 304: // Less Equal (A <= B)
+                case 304: // Less Than or Equal (A <= B)
                     if (elm.Operands.Count >= 2)
                         return GetNumericValue(elm.Operands[0]) <= GetNumericValue(elm.Operands[1]);
                     return false;
@@ -522,7 +521,7 @@ namespace UnitronicsV350Simulator
                         }
                         else if (elm.Operands.Count >= 2)
                         {
-                            tmr.PresetMs = GetNumericValue(elm.Operands[1]) * 10; // setki ms lub sekundy
+                            tmr.PresetMs = GetNumericValue(elm.Operands[1]) * 10; // 10ms resolution units
                         }
                     }
                     break;

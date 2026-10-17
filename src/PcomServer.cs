@@ -9,14 +9,14 @@ namespace UnitronicsV350Simulator
 {
     public class PcomServer
     {
-        public const int DEFAULT_PORT = 20256; // Standardowy port TCP Unitronics PCOM
+        public const int DEFAULT_PORT = 20256; // Standard Unitronics PCOM TCP port
 
         private PlcEngine plc;
         private TcpListener listener;
         private Thread listenThread;
         private bool isRunning = false;
 
-        // Zdarzenie powiadamiające UI o pobraniu programu z VisiLogic
+        // Event notifying the UI when a project has been downloaded from VisiLogic
         public event Action<string> OnProjectDownloaded;
 
         public bool IsActive { get { return isRunning; } }
@@ -40,11 +40,11 @@ namespace UnitronicsV350Simulator
                 listenThread.IsBackground = true;
                 listenThread.Start();
 
-                plc.Log(string.Format("Serwer PCOM TCP uruchomiony na porcie {0}. Oczekiwanie na VisiLogic (Download / Monitor)...", port));
+                plc.Log(string.Format("PCOM TCP server started on port {0}. Waiting for VisiLogic (Download / Online Test)...", port));
             }
             catch (Exception ex)
             {
-                plc.Log("Błąd uruchamiania serwera PCOM TCP: " + ex.Message);
+                plc.Log("Error starting PCOM TCP server: " + ex.Message);
             }
         }
 
@@ -56,7 +56,7 @@ namespace UnitronicsV350Simulator
                 if (listener != null) listener.Stop();
             }
             catch { }
-            plc.Log("Serwer PCOM TCP został zatrzymany.");
+            plc.Log("PCOM TCP server stopped.");
         }
 
         private void ListenLoop()
@@ -79,7 +79,7 @@ namespace UnitronicsV350Simulator
         {
             TcpClient client = (TcpClient)obj;
             string ep = client.Client.RemoteEndPoint.ToString();
-            plc.Log("VisiLogic / Klient PCOM połączony z: " + ep);
+            plc.Log("VisiLogic / PCOM client connected from: " + ep);
 
             try
             {
@@ -102,7 +102,7 @@ namespace UnitronicsV350Simulator
             }
             catch (Exception ex)
             {
-                plc.Log("PCOM sesja zakończona (" + ep + "): " + ex.Message);
+                plc.Log("PCOM session closed (" + ep + "): " + ex.Message);
             }
             finally
             {
@@ -118,11 +118,11 @@ namespace UnitronicsV350Simulator
             byte[] pcomTcpHeader = null;
             bool isTcpFramed = false;
 
-            // Sprawdzenie czy pakiet zawiera 6-bajtowy nagłówek PCOM/TCP:
+            // Check if packet contains the 6-byte PCOM/TCP header:
             // [0..1] Transaction ID
-            // [2] Typ protokołu: 101 (0x65) = ASCII, 102 (0x66) = Binary
+            // [2] Protocol Type: 101 (0x65) = ASCII, 102 (0x66) = Binary
             // [3] Reserved: 0
-            // [4..5] Długość pakietu PCOM (uint16 LE)
+            // [4..5] PCOM Packet Length (uint16 LE)
             if (length >= 6 && (data[2] == 101 || data[2] == 102))
             {
                 isTcpFramed = true;
@@ -141,7 +141,7 @@ namespace UnitronicsV350Simulator
             int pcomLen = length - offset;
             if (pcomLen <= 0) return null;
 
-            // Sprawdzamy czy to PCOM ASCII czy PCOM Binary
+            // Determine whether payload is PCOM ASCII or PCOM Binary
             if (data[offset] == '/' && (pcomLen < 2 || data[offset + 1] != '_'))
             {
                 // PCOM ASCII
@@ -170,7 +170,7 @@ namespace UnitronicsV350Simulator
             else if (pcomLen >= 6 && data[offset] == 0x2F && data[offset + 1] == 0x5F) // /_OPLC
             {
                 // PCOM Binary
-                plc.Log(string.Format("PCOM Binary REQ odebrane (długość: {0} bajtów)", pcomLen));
+                plc.Log(string.Format("PCOM Binary REQ received (length: {0} bytes)", pcomLen));
                 byte[] binResp = ProcessPcomBinaryCommand(data, offset, pcomLen);
                 if (binResp == null) return null;
 
@@ -204,19 +204,19 @@ namespace UnitronicsV350Simulator
 
             string cmd = req.Length >= 5 ? req.Substring(3) : "";
 
-            // Usuwamy sumę kontrolną (ostatnie 2 znaki hex) z cmd jeśli występuje
-            // Np. /00GS01330122 -> unitId="00", cmd="GS01330122", po odcięciu sumy: "GS013301"
+            // Strip trailing 2-character hex checksum if present
+            // e.g. /00GS01330122 -> unitId="00", cmd="GS01330122", stripped: "GS013301"
             string cmdBody = cmd;
             if (cmdBody.Length >= 2)
             {
                 cmdBody = cmdBody.Substring(0, cmdBody.Length - 2);
             }
 
-            // 1. Odczyt rejestrów systemowych (GS)
+            // 1. Read System Integers (GS)
             if (cmdBody.StartsWith("GS"))
             {
                 // Format: GS<Address:4 hex><Length:2 hex>
-                // Np. GS013301 -> Odczyt 1 rejestru SI pod adresem 0x0133 (SI 307 - stan gotowości OPLC)
+                // e.g. GS013301 -> Read 1 SI register at 0x0133 (SI 307 - OPLC readiness status)
                 int addr = 0;
                 int len = 1;
                 if (cmdBody.Length >= 8)
@@ -241,50 +241,50 @@ namespace UnitronicsV350Simulator
                     sbData.Append(val.ToString("X4"));
                 }
 
-                plc.Log(string.Format("PCOM ASCII GS: Odczyt SI[{0}..{1}] = {2}", addr, addr + len - 1, sbData.ToString()));
+                plc.Log(string.Format("PCOM ASCII GS: Read SI[{0}..{1}] = {2}", addr, addr + len - 1, sbData.ToString()));
                 return FormatPcomAsciiResponse(unitId, "GS" + sbData.ToString());
             }
 
-            // 2. Identyfikacja sterownika (ID, _ID, UG)
+            // 2. Controller Identification (ID, _ID, UG)
             else if (cmdBody.StartsWith("ID") || cmdBody.StartsWith("_ID"))
             {
-                // Format odpowiedzi OPLC, np. V350-35-RA22,4.04(12) lub V570-57-T20B,4.04(12)
+                // Standard OPLC ID response, e.g. V350-35-RA22,4.04(12) or V570-57-T20B,4.04(12)
                 string payload = (plc != null && plc.Profile != null) ? plc.Profile.GetPcomIdString() : "V350-35-RA22,4.04(12)";
                 return FormatPcomAsciiResponse(unitId, "ID" + payload);
             }
             else if (cmdBody.StartsWith("UG"))
             {
-                // Odpowiedź pobrania Unit ID
+                // Get Unit ID response
                 return FormatPcomAsciiResponse(unitId, "UG" + unitId);
             }
 
-            // 3. Wersja OPLC (GF)
+            // 3. OPLC Firmware Version (GF)
             else if (cmdBody.StartsWith("GF"))
             {
                 string payload = "OS:4.04(12),BOOT:2.02";
                 return FormatPcomAsciiResponse(unitId, "GF" + payload);
             }
 
-            // 4. Sterowanie pracą CPU: STOP (CCS, ST)
+            // 4. CPU Control: STOP (CCS, ST)
             else if (cmdBody.StartsWith("CCS") || cmdBody.StartsWith("ST"))
             {
                 plc.Stop();
-                plc.Log("PCOM: Zatrzymano silnik PLC na żądanie VisiLogic (tryb STOP przed Downloadem).");
+                plc.Log("PCOM: PLC engine stopped by VisiLogic request (STOP mode before Download).");
                 string cmdCode = cmdBody.StartsWith("CCS") ? "CCS" : "ST";
                 return FormatPcomAsciiResponse(unitId, cmdCode + "00");
             }
 
-            // 5. Sterowanie pracą CPU: RUN (CCR, RN)
+            // 5. CPU Control: RUN (CCR, RN)
             else if (cmdBody.StartsWith("CCR") || cmdBody.StartsWith("RN"))
             {
                 plc.Start();
-                plc.Log("PCOM: Uruchomiono silnik PLC na żądanie VisiLogic (tryb RUN po Downloadzie).");
+                plc.Log("PCOM: PLC engine started by VisiLogic request (RUN mode after Download).");
                 TriggerProjectAutoReload();
                 string cmdCode = cmdBody.StartsWith("CCR") ? "CCR" : "RN";
                 return FormatPcomAsciiResponse(unitId, cmdCode + "00");
             }
 
-            // 6. Reset CPU (RS, CCI, CCE, CCB)
+            // 6. CPU Reset (RS, CCI, CCE, CCB)
             else if (cmdBody.StartsWith("RS") || cmdBody.StartsWith("CCI") || cmdBody.StartsWith("CCE") || cmdBody.StartsWith("CCB"))
             {
                 plc.Reset();
@@ -292,7 +292,7 @@ namespace UnitronicsV350Simulator
                 return FormatPcomAsciiResponse(unitId, op + "00");
             }
 
-            // 7. Odczyt rejestrów pamięci MI (RMI, RW, RZI)
+            // 7. Read Memory Integers MI (RMI, RW, RZI)
             else if (cmdBody.StartsWith("RMI") || cmdBody.StartsWith("RW") || cmdBody.StartsWith("RZI"))
             {
                 string op = cmdBody.StartsWith("RMI") ? "RMI" : (cmdBody.StartsWith("RW") ? "RW" : "RZI");
@@ -319,7 +319,7 @@ namespace UnitronicsV350Simulator
                 return FormatPcomAsciiResponse(unitId, op + sb.ToString());
             }
 
-            // 8. Odczyt bitów pamięci MB (RMB, RB, RZB)
+            // 8. Read Memory Bits MB (RMB, RB, RZB)
             else if (cmdBody.StartsWith("RMB") || cmdBody.StartsWith("RB") || cmdBody.StartsWith("RZB"))
             {
                 string op = cmdBody.StartsWith("RMB") ? "RMB" : (cmdBody.StartsWith("RB") ? "RB" : "RZB");
@@ -346,7 +346,7 @@ namespace UnitronicsV350Simulator
                 return FormatPcomAsciiResponse(unitId, op + sb.ToString());
             }
 
-            // 9. Zapis operandów (SZI, SZB, SW, SB, WMI, WMB)
+            // 9. Write Operands (SZI, SZB, SW, SB, WMI, WMB)
             else if (cmdBody.StartsWith("SZI") || cmdBody.StartsWith("SZB") || cmdBody.StartsWith("SW") ||
                      cmdBody.StartsWith("SB") || cmdBody.StartsWith("WMI") || cmdBody.StartsWith("WMB"))
             {
@@ -354,7 +354,7 @@ namespace UnitronicsV350Simulator
                 return FormatPcomAsciiResponse(unitId, op + "00");
             }
 
-            // 10. Fallback: Odpowiedź zgodna z formatem PCOM ASCII z kodem sukcesu 00
+            // 10. Fallback: Return valid PCOM ASCII response with success code 00
             else
             {
                 string op = cmdBody.Length >= 2 ? cmdBody.Substring(0, Math.Min(3, cmdBody.Length)) : "OK";
@@ -364,8 +364,8 @@ namespace UnitronicsV350Simulator
 
         private string FormatPcomAsciiResponse(string unitId, string data)
         {
-            // Format odpowiedzi PCOM ASCII: /A + UnitID + Dane + Checksum (2 hex uppercase) + \r
-            // Suma kontrolna to suma kodów ASCII znaków po znaku '/' modulo 256
+            // PCOM ASCII response format: /A + UnitID + Data + Checksum (2 hex uppercase) + \r
+            // Checksum is the sum of ASCII character codes after '/' modulo 256
             string payload = "A" + unitId + data;
 
             int sum = 0;
@@ -380,17 +380,17 @@ namespace UnitronicsV350Simulator
 
         private byte[] ProcessPcomBinaryCommand(byte[] data, int offset, int length)
         {
-            // PCOM Binary rozpoczyna się od /_OPLC (6 bajtów: 0x2F, 0x5F, 0x4F, 0x50, 0x4C, 0x43)
-            // Rozmiar nagłówka: 24 bajty
-            // Bajt 6: Unit ID
-            // Bajty 7..11: Sub-ID / Reserved (np. FE 01 01 00 00)
-            // Bajt 12: Opcode (np. 0x41 = Write Memory, 0x1A = Flash Buffer, 0x16 = Translate Index)
-            // Bajt 13: Sub-opcode / Reserved
-            // Bajty 14..19: Details (6 bajtów, np. adres w pamięci)
-            // Bajty 20..21: Command Data Length (uint16 LE)
-            // Bajty 22..23: Header CRC (uint16 LE)
-            // Bajty 24..: Dane
-            // Ostatnie 3 bajty: Data CRC (2 bajty LE) + '\' (0x5C)
+            // PCOM Binary starts with /_OPLC (6 bytes: 0x2F, 0x5F, 0x4F, 0x50, 0x4C, 0x43)
+            // Header size: 24 bytes
+            // Byte 6: Unit ID
+            // Bytes 7..11: Sub-ID / Reserved (e.g. FE 01 01 00 00)
+            // Byte 12: Opcode (e.g. 0x41 = Write Memory, 0x1A = Flash Buffer, 0x16 = Translate Index)
+            // Byte 13: Sub-opcode / Reserved
+            // Bytes 14..19: Details (6 bytes, e.g. memory address)
+            // Bytes 20..21: Command Data Length (uint16 LE)
+            // Bytes 22..23: Header CRC (uint16 LE)
+            // Bytes 24..: Payload Data
+            // Last 3 bytes: Data CRC (2 bytes LE) + '\' (0x5C)
             if (length < 24) return null;
 
             byte unitId = data[offset + 6];
@@ -406,44 +406,44 @@ namespace UnitronicsV350Simulator
 
             switch (opcode)
             {
-                case 0x41: // Write Memory (Zapis bloku programu / zasobów)
-                    plc.Log(string.Format("PCOM Binary: Zapis bloku pamięci programu OPLC (0x41, {0} bajtów)", dataLen));
+                case 0x41: // Write Memory (Program / Resource block write)
+                    plc.Log(string.Format("PCOM Binary: OPLC program memory block write (0x41, {0} bytes)", dataLen));
                     break;
 
-                case 0x1A: // Flash Memory Buffer (Zatwierdzenie wgrania programu do FLASH)
-                    plc.Log("PCOM Binary: Rozkaz zatwierdzenia FLASH (0x1A) - program pomyślnie załadowany przez VisiLogic!");
+                case 0x1A: // Flash Memory Buffer (Commit downloaded program to FLASH)
+                    plc.Log("PCOM Binary: FLASH commit command (0x1A) - program successfully downloaded by VisiLogic!");
                     TriggerProjectAutoReload();
                     break;
 
                 case 0x16: // Translate Index to Address
-                    plc.Log("PCOM Binary: Tłumaczenie indeksu pamięci OPLC (0x16)");
+                    plc.Log("PCOM Binary: Translate OPLC memory index (0x16)");
                     break;
 
                 case 0x02: // Check Password
-                    plc.Log("PCOM Binary: Sprawdzenie hasła dostępu OPLC (0x02) -> OK");
+                    plc.Log("PCOM Binary: OPLC access password check (0x02) -> OK");
                     break;
 
                 case 0x0C: // Get PLC Name
-                    plc.Log("PCOM Binary: Zapytanie o nazwę PLC (0x0C)");
+                    plc.Log("PCOM Binary: Get PLC Name request (0x0C)");
                     respPayload = Encoding.ASCII.GetBytes("V350-35-RA22\0");
                     break;
 
                 case 0x10: // Where Resource
-                    plc.Log("PCOM Binary: Wyszukanie zasobu OPLC (0x10)");
+                    plc.Log("PCOM Binary: Locate OPLC resource (0x10)");
                     break;
 
                 case 0x01: // Read Memory
-                    plc.Log(string.Format("PCOM Binary: Odczyt pamięci OPLC (0x01, len={0})", dataLen));
+                    plc.Log(string.Format("PCOM Binary: Read OPLC memory (0x01, len={0})", dataLen));
                     respPayload = new byte[Math.Max(1, (int)dataLen)];
                     break;
 
                 case 0x4D: // Read Operand
-                    plc.Log("PCOM Binary: Odczyt operandu OPLC (0x4D)");
+                    plc.Log("PCOM Binary: Read OPLC operand (0x4D)");
                     respPayload = new byte[4];
                     break;
 
                 default:
-                    plc.Log(string.Format("PCOM Binary: Nierozpoznany opcode 0x{0:X2} -> Odpowiedź ACK sukces", opcode));
+                    plc.Log(string.Format("PCOM Binary: Unhandled opcode 0x{0:X2} -> Returning ACK success", opcode));
                     break;
             }
 
@@ -455,11 +455,11 @@ namespace UnitronicsV350Simulator
             int dataLen = (respData != null) ? respData.Length : 0;
             byte[] resp = new byte[24 + dataLen + 3];
 
-            // 1. Magic header: /_OPLC (6 bajtów)
+            // 1. Magic header: /_OPLC (6 bytes)
             byte[] magic = Encoding.ASCII.GetBytes("/_OPLC");
             Array.Copy(magic, 0, resp, 0, 6);
 
-            // 2. Unit ID i sub-nagłówek
+            // 2. Unit ID and sub-header
             resp[6] = unitId;
             resp[7] = 0xFE;
             resp[8] = 0x01;
@@ -467,9 +467,9 @@ namespace UnitronicsV350Simulator
             resp[10] = 0x00;
             resp[11] = 0x00;
 
-            // 3. Opcode odpowiedzi (MSB = 1)
+            // 3. Response Opcode (MSB = 1)
             resp[12] = (byte)(reqOpcode | 0x80);
-            resp[13] = 0x00; // Status: 0x00 = Sukces (OK)
+            resp[13] = 0x00; // Status: 0x00 = Success (OK)
 
             // 4. Details
             if (details != null && details.Length >= 6)
@@ -485,12 +485,12 @@ namespace UnitronicsV350Simulator
             resp[20] = (byte)(dataLen & 0xFF);
             resp[21] = (byte)((dataLen >> 8) & 0xFF);
 
-            // 6. Header CRC (bajty 0..21)
+            // 6. Header CRC (bytes 0..21)
             ushort hdrCrc = CalcBinaryCrc(resp, 0, 22);
             resp[22] = (byte)(hdrCrc & 0xFF);
             resp[23] = (byte)((hdrCrc >> 8) & 0xFF);
 
-            // 7. Payload danych odpowiedzi
+            // 7. Response data payload
             if (dataLen > 0)
             {
                 Array.Copy(respData, 0, resp, 24, dataLen);
@@ -521,7 +521,7 @@ namespace UnitronicsV350Simulator
         {
             try
             {
-                // Sprawdzamy czy VisiLogic ma zarejestrowany aktualnie skompilowany projekt w OPLC.ini
+                // Check if VisiLogic registered the currently compiled project in OPLC.ini
                 string iniPath = @"C:\Program Files (x86)\Unitronics\Unitronics VisiLogic_C\Data\DB\OPLC.ini";
                 string projectPath = null;
 
@@ -553,25 +553,15 @@ namespace UnitronicsV350Simulator
                     }
                 }
 
-                if (string.IsNullOrEmpty(projectPath))
-                {
-                    // Fallback na projekt domyślny Komora 9
-                    string defaultPath = @"C:\Users\Panasonic\Desktop\NARZĘDZIA\Visilogic\Projekty aktualne\Komora nr. 9 Gardno\Komora_9_PLC.vlp";
-                    if (File.Exists(defaultPath))
-                    {
-                        projectPath = defaultPath;
-                    }
-                }
-
                 if (!string.IsNullOrEmpty(projectPath) && OnProjectDownloaded != null)
                 {
-                    plc.Log("PCOM: Automatyczne ładowanie nowego projektu do silnika PLC: " + projectPath);
+                    plc.Log("PCOM: Automatically loading downloaded project into PLC engine: " + projectPath);
                     OnProjectDownloaded(projectPath);
                 }
             }
             catch (Exception ex)
             {
-                plc.Log("Błąd automatycznego odświeżania projektu po Downloadzie: " + ex.Message);
+                plc.Log("Error auto-reloading project after Download: " + ex.Message);
             }
         }
     }

@@ -73,7 +73,7 @@ namespace UnitronicsV350Simulator
                 Padding = new Point(12, 6)
             };
 
-            // --- 1. Zakładka Ogólne ---
+            // --- 1. General Tab ---
             tabGeneral = new TabPage(Localization.T("Settings_Tab_General"));
             tabGeneral.BackColor = Color.FromArgb(28, 33, 42);
 
@@ -136,7 +136,7 @@ namespace UnitronicsV350Simulator
 
             tabGeneral.Controls.AddRange(new Control[] { lblLanguage, cboLanguage, chkShowHwOnStartup, lblCurrentHw, btnChangeHw });
 
-            // --- 2. Zakładka Logowanie ---
+            // --- 2. Logging Tab ---
             tabLogging = new TabPage(Localization.T("Settings_Tab_Logging"));
             tabLogging.BackColor = Color.FromArgb(28, 33, 42);
 
@@ -165,7 +165,7 @@ namespace UnitronicsV350Simulator
                 Location = new Point(270, 58),
                 Width = 280
             };
-            // Items dodawane w ApplyLanguage
+            // Items populated in ApplyLanguage
 
             chkLogPcom = new CheckBox
             {
@@ -224,7 +224,7 @@ namespace UnitronicsV350Simulator
                 lblLogPath, txtLogPath, btnOpenLog, btnClearLog
             });
 
-            // --- 3. Zakładka Sieć ---
+            // --- 3. Network Tab ---
             tabNetwork = new TabPage(Localization.T("Settings_Tab_Network"));
             tabNetwork.BackColor = Color.FromArgb(28, 33, 42);
 
@@ -244,7 +244,7 @@ namespace UnitronicsV350Simulator
             tabControl.TabPages.AddRange(new TabPage[] { tabGeneral, tabLogging, tabNetwork });
             this.Controls.Add(tabControl);
 
-            // Dolne przyciski
+            // Bottom buttons
             btnSave = new Button
             {
                 Location = new Point(340, 405),
@@ -285,7 +285,7 @@ namespace UnitronicsV350Simulator
             chkLogPcom.Checked = config.LogPcomPackets;
             chkLogTouch.Checked = config.LogTouchEvents;
 
-            // Poziom logowania
+            // Logging verbosity level
             int vIdx = (int)config.LoggingVerbosity - 1;
             if (vIdx >= 0 && vIdx < cboLogLevel.Items.Count)
             {

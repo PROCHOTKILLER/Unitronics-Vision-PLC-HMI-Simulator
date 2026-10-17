@@ -25,22 +25,22 @@ namespace UnitronicsV350Simulator
         private Panel panelAnalogInputs;
         private Panel panelAnalogOutputs;
 
-        // Kontrolki wejść cyfrowych (do 128)
+        // Digital input controls (up to 128)
         private CheckBox[] chkInputs = new CheckBox[128];
         private Label[] lblInputLeds = new Label[128];
         private Label[] lblInputTexts = new Label[128];
         private Button[] btnMomentaryInputs = new Button[128];
 
-        // Kontrolki wyjść cyfrowych (do 128)
+        // Digital output controls (up to 128)
         private Label[] lblOutputLeds = new Label[128];
         private Label[] lblOutputTexts = new Label[128];
 
-        // Kontrolki wejść analogowych (do 16)
+        // Analog input controls (up to 16)
         private TrackBar[] trackAnalogs = new TrackBar[16];
         private NumericUpDown[] numAnalogs = new NumericUpDown[16];
         private Label[] lblAnalogLabels = new Label[16];
 
-        // Kontrolki wyjść analogowych (do 8)
+        // Analog output controls (up to 8)
         private Label[] lblAoVoltages = new Label[8];
         private ProgressBar[] barAoVoltages = new ProgressBar[8];
 
@@ -86,7 +86,7 @@ namespace UnitronicsV350Simulator
             tabControl = new TabControl();
             tabControl.Dock = DockStyle.Fill;
 
-            // --- Zakładka 1: Wejścia cyfrowe (DI) ---
+            // --- Tab 1: Digital Inputs (DI) ---
             tabDi = new TabPage(Localization.T("Hw_Tab_DI"));
             tabDi.BackColor = Color.FromArgb(28, 32, 40);
 
@@ -94,7 +94,7 @@ namespace UnitronicsV350Simulator
             BuildDynamicInputs(pnlDiContainer);
             tabDi.Controls.Add(pnlDiContainer);
 
-            // --- Zakładka 2: Wyjścia cyfrowe (DO) ---
+            // --- Tab 2: Digital Outputs (DO) ---
             tabDo = new TabPage(Localization.T("Hw_Tab_DO"));
             tabDo.BackColor = Color.FromArgb(28, 32, 40);
 
@@ -102,7 +102,7 @@ namespace UnitronicsV350Simulator
             BuildDynamicOutputs(pnlDoContainer);
             tabDo.Controls.Add(pnlDoContainer);
 
-            // --- Zakładka 3: Wejścia Analogowe (AI) ---
+            // --- Tab 3: Analog Inputs (AI) ---
             tabAi = new TabPage(Localization.T("Hw_Tab_AI"));
             tabAi.BackColor = Color.FromArgb(28, 32, 40);
 
@@ -110,7 +110,7 @@ namespace UnitronicsV350Simulator
             BuildDynamicAnalogInputs(panelAnalogInputs);
             tabAi.Controls.Add(panelAnalogInputs);
 
-            // --- Zakładka 4: Wyjścia Analogowe (AO) ---
+            // --- Tab 4: Analog Outputs (AO) ---
             tabAo = new TabPage(Localization.T("Hw_Tab_AO"));
             tabAo.BackColor = Color.FromArgb(28, 32, 40);
 
@@ -138,7 +138,7 @@ namespace UnitronicsV350Simulator
             int currentInputAddr = 0;
             int xOffset = 10;
 
-            // 1. Grupa wejść CPU / Snap-in
+            // 1. CPU / Snap-in inputs group
             if (cpuDiCount > 0)
             {
                 var grpCpu = new GroupBox
@@ -166,7 +166,7 @@ namespace UnitronicsV350Simulator
                 xOffset += 265;
             }
 
-            // 2. Grupy wejść modułów rozszerzeń EX-A2X
+            // 2. EX-A2X expansion module input groups
             if (profile.EnableExpansionBus && profile.ExpansionSlots != null)
             {
                 for (int s = 0; s < profile.ExpansionSlots.Count; s++)
@@ -217,7 +217,7 @@ namespace UnitronicsV350Simulator
                 Margin = new Padding(2)
             };
 
-            // Dioda LED
+            // Status LED
             var led = new Label
             {
                 Width = 14,
@@ -229,7 +229,7 @@ namespace UnitronicsV350Simulator
             };
             lblInputLeds[inputIdx] = led;
 
-            // Przełącznik bistabilny
+            // Latching toggle checkbox
             var chk = new CheckBox
             {
                 Text = "I" + inputIdx,
@@ -248,7 +248,7 @@ namespace UnitronicsV350Simulator
             };
             chkInputs[inputIdx] = chk;
 
-            // Przycisk chwilowy
+            // Momentary pulse button
             var btnMom = new Button
             {
                 Text = Localization.T("Hw_Btn_Pulse"),
@@ -266,7 +266,7 @@ namespace UnitronicsV350Simulator
             btnMom.MouseUp += (s, e) => { if (inputIdx < plc.I.Length) plc.I[inputIdx] = false; chk.Checked = false; };
             btnMomentaryInputs[inputIdx] = btnMom;
 
-            // Opis operandu
+            // Operand symbol / description
             var lblDesc = new Label
             {
                 Text = GetDefaultInputName(inputIdx),
@@ -296,7 +296,7 @@ namespace UnitronicsV350Simulator
             int currentOutputAddr = 0;
             int xOffset = 10;
 
-            // 1. Grupa wyjść CPU
+            // 1. CPU outputs group
             if (cpuDoCount > 0)
             {
                 var grpCpu = new GroupBox
@@ -326,7 +326,7 @@ namespace UnitronicsV350Simulator
                 xOffset += 265;
             }
 
-            // 2. Grupy wyjść modułów rozszerzeń EX-A2X
+            // 2. EX-A2X expansion module output groups
             if (profile.EnableExpansionBus && profile.ExpansionSlots != null)
             {
                 for (int s = 0; s < profile.ExpansionSlots.Count; s++)
@@ -378,7 +378,7 @@ namespace UnitronicsV350Simulator
                 Margin = new Padding(2)
             };
 
-            // Dioda LED wyjścia
+            // Output status LED
             var led = new Label
             {
                 Width = 14,
@@ -390,7 +390,7 @@ namespace UnitronicsV350Simulator
             };
             lblOutputLeds[outIdx] = led;
 
-            // Nazwa O0..O15
+            // Output address O0..O127
             var lblName = new Label
             {
                 Text = "O" + outIdx,
@@ -401,7 +401,7 @@ namespace UnitronicsV350Simulator
                 Font = new Font("Segoe UI", 8.25f, FontStyle.Bold)
             };
 
-            // Typ wyjścia (RO / TO)
+            // Output hardware type (RO / TO)
             var lblType = new Label
             {
                 Text = isRelay ? "RO" : "TO",
@@ -412,7 +412,7 @@ namespace UnitronicsV350Simulator
                 Font = new Font("Segoe UI", 7.5f)
             };
 
-            // Opis z projektu
+            // Project operand description
             var lblDesc = new Label
             {
                 Text = GetDefaultOutputName(outIdx),
@@ -457,7 +457,7 @@ namespace UnitronicsV350Simulator
                     Width = 320,
                     Minimum = 0,
                     Maximum = 1023,
-                    Value = (aiIdx < 2) ? 220 : 0, // Domyślna temperatura 22.0 C
+                    Value = (aiIdx < 2) ? 220 : 0, // Default ambient temperature 22.0 C
                     TickFrequency = 100,
                     SmallChange = 1,
                     LargeChange = 50
@@ -524,7 +524,7 @@ namespace UnitronicsV350Simulator
 
                 var lblTitle = new Label
                 {
-                    Text = string.Format("AO{0} / MI{1} [{2}]", aoIdx, miRegister, (aoIdx == 0 ? "VFD1 Frequency" : "VFD2 Frequency")),
+                    Text = string.Format("AO{0} / MI{1} [Analog Output AO{0}]", aoIdx, miRegister),
                     Left = 20,
                     Top = yPos,
                     Width = 400,
@@ -567,7 +567,7 @@ namespace UnitronicsV350Simulator
             {
                 this.BeginInvoke(new Action(() =>
                 {
-                    // Aktualizacja LED wyjść cyfrowych
+                    // Update digital output LEDs
                     int totalDo = profile.GetTotalDo();
                     for (int i = 0; i < totalDo && i < lblOutputLeds.Length; i++)
                     {
@@ -577,7 +577,7 @@ namespace UnitronicsV350Simulator
                         }
                     }
 
-                    // Aktualizacja wyjść analogowych
+                    // Update analog output gauges
                     int totalAo = profile.GetTotalAo();
                     for (int i = 0; i < totalAo && i < barAoVoltages.Length; i++)
                     {
@@ -654,62 +654,17 @@ namespace UnitronicsV350Simulator
 
         private string GetDefaultInputName(int i)
         {
-            switch (i)
-            {
-                case 0: return "Przycisk START";
-                case 1: return "Przycisk STOP";
-                case 2: return "Wyłącznik Bezpieczeństwa";
-                case 3: return "Drzwi Komory Otwarte";
-                case 4: return "Czujnik Ciśnienia SP";
-                case 5: return "Presostat Kompresora";
-                case 6: return "Termik Wentylatora 1";
-                case 7: return "Termik Wentylatora 2";
-                case 8: return "Poziom Wody w Zbiorniku";
-                case 9: return "Brak Przepływu Cieczy";
-                case 10: return "Potwierdzenie Alarmu";
-                case 11: return "Przełącznik Tryb Ręczny";
-                case 12: return "Krańcówka Zaworu Z1";
-                case 13: return "Krańcówka Zaworu Z2";
-                case 14: return "Czujnik Dymu Komory";
-                case 15: return "Rezerwa DI 15";
-                default: return "Wejście I" + i;
-            }
+            return "Digital Input I" + i;
         }
 
         private string GetDefaultOutputName(int i)
         {
-            switch (i)
-            {
-                case 0: return "Stycznik Grzałek 1";
-                case 1: return "Stycznik Grzałek 2";
-                case 2: return "Zawór Chłodzenia Z1";
-                case 3: return "Zawór Zraszania Z2";
-                case 4: return "Wentylator Obiegowy 1";
-                case 5: return "Wentylator Obiegowy 2";
-                case 6: return "Sygnalizator Dźwiękowy";
-                case 7: return "Lampa Sygnalizacyjna Czerwona";
-                case 8: return "Lampa Zielona (Praca)";
-                case 9: return "Pompa Wymuszonego Obiegu";
-                case 10: return "Klapa Odpowietrzająca";
-                case 11: return "Oświetlenie Wnętrza";
-                case 12: return "Zezwolenie Pracy Palnika";
-                case 13: return "Agregat Osuszający";
-                case 14: return "Rezerwa RO 14";
-                case 15: return "Rezerwa RO 15";
-                default: return "Wyjście O" + i;
-            }
+            return "Digital Output O" + i;
         }
 
         private string GetDefaultAiName(int i)
         {
-            switch (i)
-            {
-                case 0: return "Temperatura Wnętrza Pt100";
-                case 1: return "Wilgotność Względna 0-10V";
-                case 2: return "Ciśnienie Komory 4-20mA";
-                case 3: return "Przepływ Powietrza";
-                default: return "Wejście Analogowe AI" + i;
-            }
+            return "Analog Input AI" + i;
         }
     }
 }

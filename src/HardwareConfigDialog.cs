@@ -39,7 +39,7 @@ namespace UnitronicsV350Simulator
         private Label lblSumAi;
         private Label lblSumAo;
 
-        private Button btnPresetKomora9;
+        private Button btnPresetExpanded;
         private Button btnPresetDefault;
         private CheckBox chkShowOnStartup;
         private Button btnStart;
@@ -137,7 +137,7 @@ namespace UnitronicsV350Simulator
             bannerPanel.Controls.AddRange(new Control[] { lblBannerTitle, lblBannerSub, lblLang, cboLanguage });
             this.Controls.Add(bannerPanel);
 
-            // Główne ciało w ScrollPanel
+            // Main body inside ScrollPanel
             var mainPanel = new Panel
             {
                 Dock = DockStyle.Fill,
@@ -146,7 +146,7 @@ namespace UnitronicsV350Simulator
             };
             this.Controls.Add(mainPanel);
 
-            // --- 2. Sekcja CPU ---
+            // --- 2. CPU Selection Section ---
             grpCpu = new GroupBox
             {
                 Text = Localization.T("HwCfg_Section_Cpu"),
@@ -218,7 +218,7 @@ namespace UnitronicsV350Simulator
             grpCpu.Controls.AddRange(new Control[] { lblFamily, cboFamily, lblModel, cboModel, lblSnapIn, cboSnapIn, pnlSpecCard });
             mainPanel.Controls.Add(grpCpu);
 
-            // --- 3. Sekcja Szyny Rozszerzeń ---
+            // --- 3. Expansion Bus Section ---
             grpExp = new GroupBox
             {
                 Text = Localization.T("HwCfg_Section_Exp"),
@@ -272,7 +272,7 @@ namespace UnitronicsV350Simulator
                 EnableHeadersVisualStyles = false
             };
 
-            // Kolumny DGV
+            // DataGridView Columns
             var colSlot = new DataGridViewTextBoxColumn { Name = "Slot", HeaderText = "Slot", Width = 55, ReadOnly = true };
             var colModule = new DataGridViewComboBoxColumn
             {
@@ -310,7 +310,7 @@ namespace UnitronicsV350Simulator
             grpExp.Controls.AddRange(new Control[] { chkEnableExp, dgvSlots });
             mainPanel.Controls.Add(grpExp);
 
-            // --- 4. Sekcja Podsumowania ---
+            // --- 4. Configured I/O Summary Section ---
             grpSummary = new GroupBox
             {
                 Text = Localization.T("HwCfg_Section_Summary"),
@@ -327,20 +327,20 @@ namespace UnitronicsV350Simulator
             grpSummary.Controls.AddRange(new Control[] { lblSumDi, lblSumDo, lblSumAi, lblSumAo });
             mainPanel.Controls.Add(grpSummary);
 
-            // --- 5. Dolne Przyciski i Presety ---
-            btnPresetKomora9 = new Button
+            // --- 5. Bottom Action Buttons & Presets ---
+            btnPresetExpanded = new Button
             {
-                Text = Localization.T("HwCfg_Preset_Komora9"),
+                Text = Localization.T("HwCfg_Preset_Expanded"),
                 Location = new Point(15, 600),
                 Size = new Size(310, 30),
                 BackColor = Color.FromArgb(40, 48, 62),
                 ForeColor = Color.White,
                 FlatStyle = FlatStyle.Flat
             };
-            btnPresetKomora9.FlatAppearance.BorderColor = Color.FromArgb(0, 180, 220);
-            btnPresetKomora9.Click += (s, e) =>
+            btnPresetExpanded.FlatAppearance.BorderColor = Color.FromArgb(0, 180, 220);
+            btnPresetExpanded.Click += (s, e) =>
             {
-                profile = HardwareProfile.CreateKomora9Profile();
+                profile = HardwareProfile.CreateExpandedV350Profile();
                 LoadProfileToUi();
             };
 
@@ -406,7 +406,7 @@ namespace UnitronicsV350Simulator
                 this.Close();
             };
 
-            mainPanel.Controls.AddRange(new Control[] { btnPresetKomora9, btnPresetDefault, chkShowOnStartup, btnStart, btnCancel });
+            mainPanel.Controls.AddRange(new Control[] { btnPresetExpanded, btnPresetDefault, chkShowOnStartup, btnStart, btnCancel });
         }
 
         private void CboFamily_SelectedIndexChanged(object sender, EventArgs e)
@@ -553,7 +553,7 @@ namespace UnitronicsV350Simulator
             }
 
             grpSummary.Text = Localization.T("HwCfg_Section_Summary");
-            btnPresetKomora9.Text = Localization.T("HwCfg_Preset_Komora9");
+            btnPresetExpanded.Text = Localization.T("HwCfg_Preset_Expanded");
             btnPresetDefault.Text = Localization.T("HwCfg_Preset_Default");
             chkShowOnStartup.Text = Localization.T("HwCfg_ShowOnStartup");
 

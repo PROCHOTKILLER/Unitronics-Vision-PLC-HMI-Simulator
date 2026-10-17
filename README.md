@@ -75,13 +75,17 @@ Unitronics-Vision-PLC-HMI-Simulator/
 │
 ├── SIMULATOR_MANUAL.md          # Technical manual & operation guide
 ├── README.md                    # Project documentation
-├── Run_Simulator.bat            # Quick launcher script
 │
 ├── src/                         # Source code & build workspace
 │   ├── build.bat                # 1-click build script using csc.exe
 │   ├── rotate_versions.ps1      # Version rotator (max 5 historical versions)
 │   ├── Program.cs               # Application entry point
 │   ├── MainForm.cs              # Main window & layout
+│   ├── HardwareConfigDialog.cs  # Startup hardware configuration wizard
+│   ├── SettingsDialog.cs        # Simulator settings dialog
+│   ├── HardwareProfile.cs       # Vision controller & EX-A2X hardware profiles
+│   ├── Localization.cs          # Bilingual UI strings (English & Polish)
+│   ├── SimulatorConfig.cs       # Configuration persistence (JSON)
 │   ├── PlcEngine.cs             # Cyclic scan engine & task runner
 │   ├── PcomServer.cs            # PCOM ASCII & Binary protocol server
 │   ├── HmiRenderer.cs           # HMI graphic rendering & touch handling
@@ -90,7 +94,6 @@ Unitronics-Vision-PLC-HMI-Simulator/
 │   └── AppLogger.cs             # Diagnostics file logger
 │
 └── archive/                     # Historical version archive (max 5 kept)
-    └── v0.0.2/
 ```
 
 > 💡 **Pre-built Executable:** Download the ready-to-run `virtualplc.exe` from the [Releases](https://github.com/PROCHOTKILLER/Unitronics-Vision-PLC-HMI-Simulator/releases) tab.
@@ -127,6 +130,10 @@ The project compiles with Microsoft Visual C# Compiler (`csc.exe`) bundled with 
 
 ## 📜 Version History
 
+- **v0.0.4**:
+  - Added interactive Startup Hardware Configuration Wizard supporting Vision series models (V130, V350, V430, V570, V1040, V1210), Snap-In modules, and up to 8 EX-A2X expansion slots.
+  - Added bilingual runtime UI (English default & Polish) with on-the-fly language switching.
+  - Added Simulator Settings dialog with configurable diagnostic logging verbosity levels and persistent `virtualplc_config.json` storage.
 - **v0.0.3**:
   - Implemented advanced PCOM protocol handling for VisiLogic Project Download and query frames (`SI 307` model code, PCOM Binary commands `0x65`, `0x47`, `0x42`, `0x44`).
   - Added debug file logging to `virtualplc_debug.log`.

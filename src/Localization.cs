@@ -9,6 +9,10 @@ namespace UnitronicsV350Simulator
         Polish
     }
 
+    /// <summary>
+    /// Runtime localization engine providing English and Polish UI translation tables.
+    /// Defaults to English for international compatibility.
+    /// </summary>
     public static class Localization
     {
         public static AppLanguage CurrentLanguage { get; private set; }
@@ -20,7 +24,7 @@ namespace UnitronicsV350Simulator
 
         static Localization()
         {
-            CurrentLanguage = AppLanguage.Polish;
+            CurrentLanguage = AppLanguage.English;
             InitStrings();
         }
 
@@ -67,11 +71,10 @@ namespace UnitronicsV350Simulator
 
         private static void InitStrings()
         {
-            // --- Główne okno / Main Window ---
+            // --- Main Window ---
             Add("AppTitle", "Unitronics Vision PLC/HMI Simulator v{0} [{1}]", "Symulator PLC/HMI Unitronics Vision v{0} [{1}]");
             Add("Menu_File", "File", "Plik");
             Add("Menu_LoadProject", "Load VisiLogic Project (*.vlp, *.vlx, *.udb)...", "Wgraj projekt VisiLogic (*.vlp, *.vlx, *.udb)...");
-            Add("Menu_QuickLoadKomora9", "Quick Load Komora_9_PLC.vlp (Desktop)", "Wgraj Komora_9_PLC.vlp (szybki wybór z Pulpitu)");
             Add("Menu_ClearProject", "Clear Program (Factory State OPLC Standby)", "Wyczyść program (Czysty OPLC - stan fabryczny)");
             Add("Menu_Exit", "Exit", "Zakończ");
 
@@ -90,16 +93,16 @@ namespace UnitronicsV350Simulator
             Add("Menu_Settings", "Settings", "Ustawienia");
             Add("Menu_SettingsGeneral", "Simulator Settings...", "Ustawienia symulatora...");
 
-            Add("Menu_Language", "Language / Język", "Język / Language");
+            Add("Menu_Language", "Language", "Język / Language");
             Add("Menu_Lang_PL", "Polski (Polish)", "Polski (Polish)");
-            Add("Menu_Lang_EN", "English (Angielski)", "English (Angielski)");
+            Add("Menu_Lang_EN", "English", "English (Angielski)");
 
             Add("Menu_Help", "Help", "Pomoc");
             Add("Menu_OpenLog", "Open Debug Log (virtualplc_debug.log)...", "Otwórz plik logu debugera (virtualplc_debug.log)...");
             Add("Menu_Info", "OPLC System Info...", "Informacje systemowe OPLC...");
             Add("Menu_About", "About Simulator...", "O symulatorze OPLC...");
 
-            // --- Pasek stanu / Status Bar ---
+            // --- Status Bar ---
             Add("Status_State_STOP", "PLC: STOP (Standby)", "PLC: STOP (Czuwanie)");
             Add("Status_State_RUN", "PLC: RUN (Running)", "PLC: RUN (Praca)");
             Add("Status_State_PAUSE", "PLC: PAUSE", "PLC: PAUZA");
@@ -111,7 +114,7 @@ namespace UnitronicsV350Simulator
             Add("Status_Page", "Display: #{0} '{1}'", "Ekran: #{0} '{1}'");
             Add("Status_HardwareProfile", "Hardware: {0}", "Sprzęt: {0}");
 
-            // --- Panel czołowy / Front Panel ---
+            // --- Front Panel ---
             Add("Front_Header", "UNITRONICS VISION VIRTUAL OPLC", "UNITRONICS VISION VIRTUAL OPLC");
             Add("Front_Keys_F1_F8", "FUNCTION KEYS (F1 - F8)", "KLAWISZE FUNKCYJNE (F1 - F8)");
             Add("Front_Keys_Nav", "SYSTEM & NAVIGATION KEYS", "KLAWISZE SYSTEMOWE I NAWIGACJI");
@@ -119,14 +122,14 @@ namespace UnitronicsV350Simulator
             Add("Front_Key_ENTER", "ENTER", "ENTER");
             Add("Front_Key_INFO", "<i> INFO", "<i> INFO");
 
-            // --- Zakładki główne / Main Tabs ---
+            // --- Main Tabs ---
             Add("Tab_Hardware", "Hardware I/O & Panels", "Sprzęt i Wejścia/Wyjścia I/O");
             Add("Tab_Watch", "Operand Watch Table", "Tabela Zmiennych (Watch)");
             Add("Tab_Subroutines", "Ladder Logic Subroutines", "Podprogramy Drabinkowe (Ladder)");
             Add("Tab_HmiPages", "HMI Displays List", "Ekrany Graficzne HMI");
             Add("Tab_Diagnostics", "Diagnostics & Logs", "Diagnostyka i Logi");
 
-            // --- Panel sprzętowy / Hardware Panel ---
+            // --- Hardware Panel ---
             Add("Hw_Tab_DI", "Digital Inputs (DI)", "Wejścia Cyfrowe (DI)");
             Add("Hw_Tab_DO", "Digital Outputs (DO / Relays)", "Wyjścia Cyfrowe (DO / Przekaźniki)");
             Add("Hw_Tab_AI", "Analog Inputs (AI)", "Wejścia Analogowe (AI)");
@@ -141,11 +144,11 @@ namespace UnitronicsV350Simulator
             Add("Hw_Label_Relay", "RELAY", "PRZEKAŹNIK");
             Add("Hw_Label_Transistor", "TRANSISTOR", "TRANZYSTOR");
 
-            // --- Okno Konfiguracji Sprzętowej / Hardware Config Dialog ---
+            // --- Hardware Configuration Dialog ---
             Add("HwCfg_Title", "Hardware Configuration - Unitronics Vision Series", "Konfiguracja Sprzętowa - Unitronics Vision");
             Add("HwCfg_BannerTitle", "HARDWARE PROFILE CONFIGURATION", "KONFIGURACJA PROFILU SPRZĘTOWEGO");
             Add("HwCfg_BannerSub", "Select Vision controller model and I/O expansion modules enforced by the simulator", "Wybierz model sterownika Vision i moduły rozszerzeń I/O respektowane przez symulator");
-            Add("HwCfg_LangLabel", "Language / Język:", "Język / Language:");
+            Add("HwCfg_LangLabel", "Language:", "Język / Language:");
             Add("HwCfg_Section_Cpu", "1. PLC Controller Selection", "1. Wybór Sterownika PLC");
             Add("HwCfg_FamilyLabel", "Series / Family:", "Rodzina sterowników:");
             Add("HwCfg_ModelLabel", "Controller Model:", "Model sterownika:");
@@ -173,20 +176,20 @@ namespace UnitronicsV350Simulator
             Add("HwCfg_Sum_Ai", "Total Analog Inputs (AI): {0} (AN0 .. AN{1})", "Łącznie wejścia analogowe (AI): {0} (AN0 .. AN{1})");
             Add("HwCfg_Sum_Ao", "Total Analog Outputs (AO): {0} (AO0 .. AO{1})", "Łącznie wyjścia analogowe (AO): {0} (AO0 .. AO{1})");
 
-            Add("HwCfg_Preset_Komora9", "Load Preset: V350-RA22 + IO-DI8-RO8 Relay", "Wczytaj profil: V350-RA22 + IO-DI8-RO8 Przekaźniki");
+            Add("HwCfg_Preset_Expanded", "Load Preset: V350-RA22 + IO-DI8-RO8 Relay", "Wczytaj profil: V350-RA22 + IO-DI8-RO8 Przekaźniki");
             Add("HwCfg_Preset_Default", "Reset to Default (V350-RA22 Standalone)", "Przywróć domyślny (V350-RA22 bez rozszerzeń)");
             Add("HwCfg_ShowOnStartup", "Always show this configuration dialog on startup", "Zawsze pokazuj ten panel przy uruchamianiu");
             Add("HwCfg_Btn_Start", "Start Simulator", "Uruchom symulator");
             Add("HwCfg_Btn_Apply", "Apply Configuration", "Zastosuj konfigurację");
             Add("HwCfg_Btn_Cancel", "Cancel / Exit", "Anuluj / Wyjdź");
 
-            // --- Okno Ustawień / Settings Dialog ---
+            // --- Settings Dialog ---
             Add("Settings_Title", "Simulator Settings & Options", "Ustawienia i Opcje Symulatora");
             Add("Settings_Tab_General", "General", "Ogólne");
             Add("Settings_Tab_Logging", "Logging & Diagnostics", "Logowanie i Diagnostyka");
             Add("Settings_Tab_Network", "PCOM Network", "Sieć PCOM");
 
-            Add("Settings_LangLabel", "Display Language / Język interfejsu:", "Język wyświetlania / Display Language:");
+            Add("Settings_LangLabel", "Display Language:", "Język wyświetlania / Display Language:");
             Add("Settings_StartupLabel", "Startup Behavior:", "Zachowanie przy starcie:");
             Add("Settings_ShowHwOnStartup", "Show hardware configuration panel on startup", "Pokazuj panel konfiguracji sprzętowej przy starcie");
             Add("Settings_CurrentHw", "Active Hardware Profile: {0}", "Aktywny profil sprzętowy: {0}");
@@ -210,7 +213,7 @@ namespace UnitronicsV350Simulator
             Add("Settings_Btn_Save", "Save & Apply", "Zapisz i Zastosuj");
             Add("Settings_Btn_Cancel", "Cancel", "Anuluj");
 
-            // --- Tabela Watch / Watch Table ---
+            // --- Watch Table ---
             Add("Watch_Col_Type", "Type", "Typ");
             Add("Watch_Col_Addr", "Address", "Adres");
             Add("Watch_Col_Symbol", "Symbol / Name", "Symbol / Nazwa");
@@ -231,16 +234,25 @@ namespace UnitronicsV350Simulator
 
             // --- Boot Screen & Logging Menu ---
             Add("Boot_CleanState", "Controller is in clean factory standby mode.", "Sterownik jest w czystym stanie fabrycznym (czuwanie).");
-            Add("Boot_OutputsOff", "All digital and analog outputs are OFF.", "Wszystkie wyjscia sa wylaczone (OFF).");
-            Add("Boot_HowToStart", "To start program execution:", "Aby uruchomic aplikacje:");
+            Add("Boot_OutputsOff", "All digital and analog outputs are OFF.", "Wszystkie wyjścia są wyłączone (OFF).");
+            Add("Boot_HowToStart", "To start program execution:", "Aby uruchomić aplikację:");
             Add("Boot_LoadVlp", "-> Click 'File -> Load VisiLogic Project (*.vlp)'", "-> Kliknij menu 'Plik -> Wgraj projekt (*.vlp)'");
-            Add("Boot_ConnectPcom", "-> OR connect VisiLogic via TCP 127.0.0.1:{0}", "-> LUB polacz VisiLogic po TCP 127.0.0.1:{0}");
+            Add("Boot_ConnectPcom", "-> OR connect VisiLogic via TCP 127.0.0.1:{0}", "-> LUB połącz VisiLogic po TCP 127.0.0.1:{0}");
             Add("Status_NoProgram", "NO USER PROGRAM", "BRAK PROGRAMU");
             Add("Status_Plc", "STATUS", "STAN");
             Add("Menu_Logging", "Logging", "Logowanie");
-            Add("Menu_LogEnabled", "Enable Logging", "Wlacz logowanie");
-            Add("Menu_LogLevel", "Log Verbosity Level", "Szczegolowosc logowania");
-            Add("Menu_ClearLog", "Clear Debug Log File", "Wyczysc plik logu");
+            Add("Menu_LogEnabled", "Enable Logging", "Włącz logowanie");
+            Add("Menu_LogLevel", "Log Verbosity Level", "Szczegółowość logowania");
+            Add("Menu_ClearLog", "Clear Debug Log File", "Wyczyść plik logu");
+
+            Add("Watch_TypeFilterLabel", "Type filter:", "Filtr typu:");
+            Add("Watch_SearchLabel", "Search:", "Szukaj:");
+            Add("Watch_Btn_Force", "✏ Change / Force Value", "✏ Zmień / Wymuś wartość (Force)");
+            Add("Watch_Col_LiveValue", "Live Value", "Wartość Live");
+            Add("Watch_Col_Format", "Format", "Jednostka / Format");
+            Add("Bezel_TouchHint", "• Display {0} Touchscreen: click on the screen to operate HMI controls.\n• Keys F1..F5: control PLC system bits SB 31..SB 35.", "• Ekran {0} Touchscreen: kliknij na ekranie, aby wciskać przyciski HMI lub przełączać ekrany.\n• Klawisze F1..F5: sterują bitami SB 31..SB 35 sterownika PLC.");
+            Add("Msg_ConfirmClearProject", "Are you sure you want to clear the program and return controller to factory standby state?", "Czy na pewno chcesz wyczyścić program i przywrócić sterownik do czystego stanu fabrycznego?");
+            Add("Msg_CannotStartNoProgram", "Cannot start PLC in RUN mode without a loaded VisiLogic project!\nUse 'LOAD PROJECT' button to load ladder code.", "Nie można uruchomić PLC w trybie RUN bez załadowanego programu z VisiLogic!\nUżyj przycisku 'WGRAJ PROJEKT' aby załadować kod drabinkowy.");
         }
     }
 }

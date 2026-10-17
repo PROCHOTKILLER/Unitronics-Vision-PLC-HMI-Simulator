@@ -78,13 +78,13 @@ namespace UnitronicsV350Simulator
         public bool EnableExpansionBus { get; set; }
         public List<ExpansionSlotConfig> ExpansionSlots { get; set; }
 
-        // Katalog dostępnych modeli sterowników
+        // Catalog of available PLC models
         public static readonly Dictionary<string, PlcModelSpec> AvailableModels = new Dictionary<string, PlcModelSpec>(StringComparer.OrdinalIgnoreCase);
 
-        // Katalog modułów Snap-in dla sterowników modułowych
+        // Catalog of Snap-in I/O modules for modular controllers
         public static readonly Dictionary<string, SnapInModuleSpec> AvailableSnapIns = new Dictionary<string, SnapInModuleSpec>(StringComparer.OrdinalIgnoreCase);
 
-        // Katalog modułów rozszerzeń EX-A2X
+        // Catalog of EX-A2X expansion I/O modules
         public static readonly Dictionary<string, ExpansionModuleSpec> AvailableExpansions = new Dictionary<string, ExpansionModuleSpec>(StringComparer.OrdinalIgnoreCase);
 
         static HardwareProfile()
@@ -244,7 +244,7 @@ namespace UnitronicsV350Simulator
             return spec.ModelName;
         }
 
-        public static HardwareProfile CreateKomora9Profile()
+        public static HardwareProfile CreateExpandedV350Profile()
         {
             var prof = new HardwareProfile();
             prof.SelectedModelName = "V350-35-RA22";
@@ -266,7 +266,7 @@ namespace UnitronicsV350Simulator
 
         public static HardwareProfile CreateDefaultProfile()
         {
-            return CreateKomora9Profile();
+            return CreateExpandedV350Profile();
         }
 
         private static void InitCatalogs()
@@ -504,7 +504,7 @@ namespace UnitronicsV350Simulator
                 IdentificationString = "V1210-T20BJ,4.04(12)"
             };
 
-            // --- SNAP-IN MODULES (dla V570, V1040, V1210) ---
+            // --- SNAP-IN MODULES (for V570, V1040, V1210) ---
             AvailableSnapIns["None"] = new SnapInModuleSpec
             {
                 ModelName = "None",

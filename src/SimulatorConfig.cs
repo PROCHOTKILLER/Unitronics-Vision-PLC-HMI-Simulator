@@ -1,7 +1,7 @@
 using System;
-using System.Collections.Generic;
 using System.IO;
 using System.Text;
+using System.Web.Script.Serialization;
 
 namespace UnitronicsV350Simulator
 {
@@ -14,8 +14,48 @@ namespace UnitronicsV350Simulator
         Trace = 5
     }
 
+    /// <summary>
+    /// Simulator configuration model persisted to virtualplc_config.json.
+    /// Stores language preferences, logging settings, network port, and active hardware profile.
+    /// </summary>
     public class SimulatorConfig
     {
+        public static SimulatorConfig Current { get; set; }
+
+        public AppLanguage Language { get; set; }
+        public bool ShowConfigOnStartup { get; set; }
+        public bool AutoRunOnProjectLoad { get; set; }
+        public int PcomPort { get; set; }
+
+        // Logging settings
+        public bool LoggingEnabled { get; set; }
+        public LogVerbosity LoggingVerbosity { get; set; }
+        public bool LogPcomPackets { get; set; }
+        public bool LogTouchEvents { get; set; }
+
+        // Active PLC hardware profile
+        public HardwareProfile Profile { get; set; }
+
+        static SimulatorConfig()
+        {
+            Current = Load();
+        }
+
+        public SimulatorConfig()
+        {
+            Language = AppLanguage.English;
+            ShowConfigOnStartup = true;
+            AutoRunOnProjectLoad = true;
+            PcomPort = 20256;
+
+            LoggingEnabled = true;
+            LoggingVerbosity = LogVerbosity.Info;
+            LogPcomPackets = true;
+            LogTouchEvents = true;
+
+            Profile = HardwareProfile.CreateExpandedV350Profile();
+        }
+
         public static string ConfigFilePath
         {
             get
@@ -24,266 +64,105 @@ namespace UnitronicsV350Simulator
             }
         }
 
-        public AppLanguage Language { get; set; }
-        public bool ShowConfigOnStartup { get; set; }
-        public int PcomPort { get; set; }
-
-        // Logowanie
-        public bool LoggingEnabled { get; set; }
-        public LogVerbosity LoggingVerbosity { get; set; }
-        public bool LogPcomPackets { get; set; }
-        public bool LogTouchEvents { get; set; }
-
-        // Profil sprzętowy
-        public HardwareProfile Profile { get; set; }
-        public HardwareProfile HardwareProfile { get { return Profile; } set { Profile = value; } }
-
-        public SimulatorConfig()
-        {
-            Language = AppLanguage.Polish;
-            ShowConfigOnStartup = true;
-            PcomPort = 20256;
-            LoggingEnabled = true;
-            LoggingVerbosity = LogVerbosity.Info;
-            LogPcomPackets = true;
-            LogTouchEvents = true;
-            Profile = HardwareProfile.CreateKomora9Profile();
-        }
-
-        private static SimulatorConfig _current;
-        public static SimulatorConfig Current
-        {
-            get
-            {
-                if (_current == null)
-                {
-                    _current = Load();
-                }
-                return _current;
-            }
-            set
-            {
-                _current = value;
-            }
-        }
-
         public static SimulatorConfig Load()
         {
-            var cfg = new SimulatorConfig();
             try
             {
-                if (File.Exists(ConfigFilePath))
+                string path = ConfigFilePath;
+                if (File.Exists(path))
                 {
-                    string json = File.ReadAllText(ConfigFilePath, Encoding.UTF8);
-                    cfg.ParseJson(json);
-                }
-                else
-                {
-                    // Zapisz domyślny plik
-                    cfg.Save();
+                    string json = File.ReadAllText(path, Encoding.UTF8);
+                    JavaScriptSerializer ser = new JavaScriptSerializer();
+                    SimulatorConfig cfg = ser.Deserialize<SimulatorConfig>(json);
+                    if (cfg != null)
+                    {
+                        if (cfg.Profile == null)
+                            cfg.Profile = HardwareProfile.CreateExpandedV350Profile();
+                        cfg.Profile.EnsureSlotsInitialized();
+                        if (cfg.PcomPort <= 0 || cfg.PcomPort > 65535)
+                            cfg.PcomPort = 20256;
+                        if ((int)cfg.LoggingVerbosity < 1 || (int)cfg.LoggingVerbosity > 5)
+                            cfg.LoggingVerbosity = LogVerbosity.Info;
+                        Current = cfg;
+                        return cfg;
+                    }
                 }
             }
             catch (Exception ex)
             {
-                AppLogger.Error("Błąd wczytywania konfiguracji virtualplc_config.json, użyto domyślnej", ex);
+                AppLogger.Error("Error loading simulator configuration from JSON", ex);
             }
-            return cfg;
+
+            var defaultCfg = new SimulatorConfig();
+            Current = defaultCfg;
+            return defaultCfg;
         }
 
         public void Save()
         {
             try
             {
-                string json = ToJson();
-                File.WriteAllText(ConfigFilePath, json, Encoding.UTF8);
+                JavaScriptSerializer ser = new JavaScriptSerializer();
+                string json = ser.Serialize(this);
+                File.WriteAllText(ConfigFilePath, FormatJson(json), Encoding.UTF8);
             }
             catch (Exception ex)
             {
-                AppLogger.Error("Błąd zapisu pliku konfiguracji: " + ConfigFilePath, ex);
+                AppLogger.Error("Error saving simulator configuration to JSON", ex);
             }
         }
 
-        public string ToJson()
+        private static string FormatJson(string json)
         {
-            var sb = new StringBuilder();
-            sb.AppendLine("{");
-            sb.AppendLine(string.Format("  \"Language\": \"{0}\",", Language.ToString()));
-            sb.AppendLine(string.Format("  \"ShowConfigOnStartup\": {0},", ShowConfigOnStartup.ToString().ToLower()));
-            sb.AppendLine(string.Format("  \"PcomPort\": {0},", PcomPort));
-            sb.AppendLine(string.Format("  \"LoggingEnabled\": {0},", LoggingEnabled.ToString().ToLower()));
-            sb.AppendLine(string.Format("  \"LoggingVerbosity\": \"{0}\",", LoggingVerbosity.ToString()));
-            sb.AppendLine(string.Format("  \"LogPcomPackets\": {0},", LogPcomPackets.ToString().ToLower()));
-            sb.AppendLine(string.Format("  \"LogTouchEvents\": {0},", LogTouchEvents.ToString().ToLower()));
-            sb.AppendLine("  \"HardwareProfile\": {");
-            sb.AppendLine(string.Format("    \"SelectedModelName\": \"{0}\",", Profile.SelectedModelName));
-            sb.AppendLine(string.Format("    \"SelectedSnapInName\": \"{0}\",", Profile.SelectedSnapInName));
-            sb.AppendLine(string.Format("    \"EnableExpansionBus\": {0},", Profile.EnableExpansionBus.ToString().ToLower()));
-            sb.AppendLine("    \"ExpansionSlots\": [");
-            if (Profile.ExpansionSlots != null)
+            if (string.IsNullOrEmpty(json)) return "";
+            StringBuilder sb = new StringBuilder();
+            int indent = 0;
+            bool inQuotes = false;
+            for (int i = 0; i < json.Length; i++)
             {
-                for (int i = 0; i < Profile.ExpansionSlots.Count; i++)
+                char c = json[i];
+                if (c == '"' && (i == 0 || json[i - 1] != '\\'))
                 {
-                    var slot = Profile.ExpansionSlots[i];
-                    string comma = (i < Profile.ExpansionSlots.Count - 1) ? "," : "";
-                    sb.AppendLine(string.Format("      {{ \"SlotNumber\": {0}, \"ModuleName\": \"{1}\" }}{2}", slot.SlotNumber, slot.ModuleName, comma));
+                    inQuotes = !inQuotes;
+                    sb.Append(c);
                 }
-            }
-            sb.AppendLine("    ]");
-            sb.AppendLine("  }");
-            sb.AppendLine("}");
-            return sb.ToString();
-        }
-
-        public void ParseJson(string json)
-        {
-            if (string.IsNullOrEmpty(json)) return;
-
-            // Prosty, bezpieczny parser par klucz-wartość
-            var lines = json.Split(new char[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
-            bool inProfile = false;
-            bool inSlots = false;
-
-            if (Profile == null) Profile = new HardwareProfile();
-            Profile.EnsureSlotsInitialized();
-
-            foreach (var rawLine in lines)
-            {
-                string line = rawLine.Trim();
-                if (line.StartsWith("\"HardwareProfile\""))
+                else if (!inQuotes)
                 {
-                    inProfile = true;
-                    continue;
-                }
-                if (line.StartsWith("\"ExpansionSlots\""))
-                {
-                    inSlots = true;
-                    continue;
-                }
-                if (line.StartsWith("]"))
-                {
-                    inSlots = false;
-                    continue;
-                }
-                if (line.StartsWith("}") && inProfile && !inSlots)
-                {
-                    inProfile = false;
-                    continue;
-                }
-
-                if (inSlots)
-                {
-                    // Slot format: { "SlotNumber": 1, "ModuleName": "IO-DI8-RO8" }
-                    int slotNum = ExtractInt(line, "SlotNumber");
-                    string modName = ExtractString(line, "ModuleName");
-                    if (slotNum >= 1 && slotNum <= 8 && !string.IsNullOrEmpty(modName))
+                    if (c == '{' || c == '[')
                     {
-                        Profile.ExpansionSlots[slotNum - 1].ModuleName = modName;
+                        sb.Append(c);
+                        sb.AppendLine();
+                        indent++;
+                        sb.Append(new string(' ', indent * 2));
                     }
-                    continue;
-                }
-
-                if (inProfile)
-                {
-                    if (line.Contains("\"SelectedModelName\""))
+                    else if (c == '}' || c == ']')
                     {
-                        string val = ExtractString(line, "SelectedModelName");
-                        if (!string.IsNullOrEmpty(val)) Profile.SelectedModelName = val;
+                        sb.AppendLine();
+                        indent = Math.Max(0, indent - 1);
+                        sb.Append(new string(' ', indent * 2));
+                        sb.Append(c);
                     }
-                    else if (line.Contains("\"SelectedSnapInName\""))
+                    else if (c == ',')
                     {
-                        string val = ExtractString(line, "SelectedSnapInName");
-                        if (!string.IsNullOrEmpty(val)) Profile.SelectedSnapInName = val;
+                        sb.Append(c);
+                        sb.AppendLine();
+                        sb.Append(new string(' ', indent * 2));
                     }
-                    else if (line.Contains("\"EnableExpansionBus\""))
+                    else if (c == ':')
                     {
-                        Profile.EnableExpansionBus = ExtractBool(line, "EnableExpansionBus", true);
-                    }
-                    continue;
-                }
-
-                // Sekcja główna
-                if (line.Contains("\"Language\""))
-                {
-                    string l = ExtractString(line, "Language");
-                    if (string.Equals(l, "English", StringComparison.OrdinalIgnoreCase) || string.Equals(l, "en", StringComparison.OrdinalIgnoreCase))
-                    {
-                        Language = AppLanguage.English;
+                        sb.Append(": ");
                     }
                     else
                     {
-                        Language = AppLanguage.Polish;
+                        sb.Append(c);
                     }
                 }
-                else if (line.Contains("\"ShowConfigOnStartup\""))
+                else
                 {
-                    ShowConfigOnStartup = ExtractBool(line, "ShowConfigOnStartup", true);
-                }
-                else if (line.Contains("\"PcomPort\""))
-                {
-                    PcomPort = ExtractInt(line, "PcomPort", 20256);
-                }
-                else if (line.Contains("\"LoggingEnabled\""))
-                {
-                    LoggingEnabled = ExtractBool(line, "LoggingEnabled", true);
-                }
-                else if (line.Contains("\"LoggingVerbosity\""))
-                {
-                    string v = ExtractString(line, "LoggingVerbosity");
-                    try
-                    {
-                        LoggingVerbosity = (LogVerbosity)Enum.Parse(typeof(LogVerbosity), v, true);
-                    }
-                    catch
-                    {
-                        LoggingVerbosity = LogVerbosity.Info;
-                    }
-                }
-                else if (line.Contains("\"LogPcomPackets\""))
-                {
-                    LogPcomPackets = ExtractBool(line, "LogPcomPackets", true);
-                }
-                else if (line.Contains("\"LogTouchEvents\""))
-                {
-                    LogTouchEvents = ExtractBool(line, "LogTouchEvents", true);
+                    sb.Append(c);
                 }
             }
-        }
-
-        private static string ExtractString(string line, string key)
-        {
-            int idx = line.IndexOf("\"" + key + "\"");
-            if (idx < 0) return null;
-            int colon = line.IndexOf(':', idx);
-            if (colon < 0) return null;
-            int q1 = line.IndexOf('"', colon);
-            if (q1 < 0) return null;
-            int q2 = line.IndexOf('"', q1 + 1);
-            if (q2 < 0) return null;
-            return line.Substring(q1 + 1, q2 - q1 - 1).Trim();
-        }
-
-        private static bool ExtractBool(string line, string key, bool def)
-        {
-            int idx = line.IndexOf("\"" + key + "\"");
-            if (idx < 0) return def;
-            int colon = line.IndexOf(':', idx);
-            if (colon < 0) return def;
-            string val = line.Substring(colon + 1).Trim().TrimEnd(',', '}');
-            bool res;
-            if (bool.TryParse(val, out res)) return res;
-            return def;
-        }
-
-        private static int ExtractInt(string line, string key, int def = 0)
-        {
-            int idx = line.IndexOf("\"" + key + "\"");
-            if (idx < 0) return def;
-            int colon = line.IndexOf(':', idx);
-            if (colon < 0) return def;
-            string val = line.Substring(colon + 1).Trim().TrimEnd(',', '}');
-            int res;
-            if (int.TryParse(val, out res)) return res;
-            return def;
+            return sb.ToString();
         }
     }
 }
