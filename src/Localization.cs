@@ -173,7 +173,7 @@ namespace UnitronicsV350Simulator
             Add("HwCfg_Sum_Ai", "Total Analog Inputs (AI): {0} (AN0 .. AN{1})", "Łącznie wejścia analogowe (AI): {0} (AN0 .. AN{1})");
             Add("HwCfg_Sum_Ao", "Total Analog Outputs (AO): {0} (AO0 .. AO{1})", "Łącznie wyjścia analogowe (AO): {0} (AO0 .. AO{1})");
 
-            Add("HwCfg_Preset_Komora9", "Load Preset: Chamber 9 (V350-RA22 + IO-DI8-RO8)", "Wczytaj profil: Komora 9 (V350-RA22 + IO-DI8-RO8)");
+            Add("HwCfg_Preset_Komora9", "Load Preset: V350-RA22 + IO-DI8-RO8 Relay", "Wczytaj profil: V350-RA22 + IO-DI8-RO8 Przekaźniki");
             Add("HwCfg_Preset_Default", "Reset to Default (V350-RA22 Standalone)", "Przywróć domyślny (V350-RA22 bez rozszerzeń)");
             Add("HwCfg_ShowOnStartup", "Always show this configuration dialog on startup", "Zawsze pokazuj ten panel przy uruchamianiu");
             Add("HwCfg_Btn_Start", "Start Simulator", "Uruchom symulator");

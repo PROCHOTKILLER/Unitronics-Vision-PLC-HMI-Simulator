@@ -32,7 +32,7 @@ This simulator is designed to emulate the complete runtime environment for all p
 - **Startup Hardware Configuration Wizard**:
   - Modal startup dialog allows interactive selection of PLC family and model, Snap-In modules (for modular series V570/V1040/V1210), and up to 8 EX-A2X expansion slots.
   - Strict hardware enforcement: screen resolution, touchscreen capability, and PCOM model identification.
-  - Quick presets for drying kilns (e.g. Komora 9: V350 + IO-DI8-RO8) and factory default standalone models.
+  - Quick presets for industrial configurations (e.g. V350-RA22 + IO-DI8-RO8 Relay expansion) and factory default standalone models.
 - **Bilingual Interface (English & Polish)**:
   - Full runtime bilingual support across all menus, dialogs, and I/O status labels with instant on-the-fly language switching.
 - **Configurable Logging Engine**:
