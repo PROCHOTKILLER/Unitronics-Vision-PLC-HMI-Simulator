@@ -228,10 +228,25 @@ namespace UnitronicsV350Simulator
             return total;
         }
 
+        // Standard 50-character PCOM version tail expected by VisiLogic UnCmDrv1.dll (offsets after 2-char "ID" + N-char ModelCode):
+        // [0]    Hardware version ('A')
+        // [1..8] OS version ("00401326" -> 4.013.26, matching VCO00401326_V350.UOS)
+        // [9]    Space
+        // [10..17] Boot version ("00200253" -> 2.002.53, matching VCB00200253_V350.UOS)
+        // [18]   Space
+        // [19..26] Factory Boot version ("00100306" -> 1.003.06)
+        // [27]   Space
+        // [28..35] BinLib version ("0210  04" -> 0-2.10(04), matching VCF00201004_V350.UOS)
+        // [36..37] Flash type ("FT")
+        // [38..42] OSDownload ("00000")
+        // [43..47] BootDownload ("00000")
+        // [48..49] Reserved ("  ")
+        public const string DefaultPcomVersionTail = "A00401326 00200253 00100306 0210  04FT0000000000  ";
+
         public string GetPcomIdString()
         {
             var spec = GetCurrentModelSpec();
-            return spec.IdentificationString ?? (spec.ModelName + ",4.04(12)");
+            return spec.IdentificationString ?? ("35RA22" + DefaultPcomVersionTail);
         }
 
         public string GetModelFullName()
@@ -287,7 +302,7 @@ namespace UnitronicsV350Simulator
                 OnboardAi = 2,
                 OnboardAo = 0,
                 Description = "3.5\" QVGA Color Touchscreen, 12 DI, 2 AI, 6 Relay Out, 2 Transistor High-Speed Out",
-                IdentificationString = "V350-35-RA22,4.04(12)"
+                IdentificationString = "35RA22" + DefaultPcomVersionTail
             };
             AvailableModels["V350-35-TRA22"] = new PlcModelSpec
             {
@@ -304,7 +319,7 @@ namespace UnitronicsV350Simulator
                 OnboardAi = 2,
                 OnboardAo = 2,
                 Description = "3.5\" QVGA Color Touchscreen, 12 DI, 2 AI, 4 Relay, 4 Transistor, 2 Analog Out",
-                IdentificationString = "V350-35-TRA22,4.04(12)"
+                IdentificationString = "35TR22" + DefaultPcomVersionTail
             };
             AvailableModels["V350-35-TA24"] = new PlcModelSpec
             {
@@ -321,7 +336,7 @@ namespace UnitronicsV350Simulator
                 OnboardAi = 2,
                 OnboardAo = 0,
                 Description = "3.5\" QVGA Color Touchscreen, 12 DI, 2 AI, 12 Transistor Out (High Speed)",
-                IdentificationString = "V350-35-TA24,4.04(12)"
+                IdentificationString = "35TA24" + DefaultPcomVersionTail
             };
             AvailableModels["V350-35-R34"] = new PlcModelSpec
             {
@@ -338,7 +353,7 @@ namespace UnitronicsV350Simulator
                 OnboardAi = 2,
                 OnboardAo = 0,
                 Description = "3.5\" QVGA Color Touchscreen, 22 DI, 2 AI, 12 Relay Out",
-                IdentificationString = "V350-35-R34,4.04(12)"
+                IdentificationString = "35R34 " + DefaultPcomVersionTail
             };
             AvailableModels["V350-35-T38"] = new PlcModelSpec
             {
@@ -355,7 +370,7 @@ namespace UnitronicsV350Simulator
                 OnboardAi = 2,
                 OnboardAo = 0,
                 Description = "3.5\" QVGA Color Touchscreen, 22 DI, 2 AI, 16 Transistor Out",
-                IdentificationString = "V350-35-T38,4.04(12)"
+                IdentificationString = "35T38 " + DefaultPcomVersionTail
             };
 
             // --- 2. Vision 130 ---
@@ -374,7 +389,7 @@ namespace UnitronicsV350Simulator
                 OnboardAi = 2,
                 OnboardAo = 0,
                 Description = "2.4\" Graphic LCD (Keypad only), 12 DI, 2 AI, 6 Relay Out, 2 Transistor Out",
-                IdentificationString = "V130-33-RA22,4.04(12)"
+                IdentificationString = "13RA22" + DefaultPcomVersionTail
             };
             AvailableModels["V130-33-TA24"] = new PlcModelSpec
             {
@@ -391,7 +406,7 @@ namespace UnitronicsV350Simulator
                 OnboardAi = 2,
                 OnboardAo = 0,
                 Description = "2.4\" Graphic LCD (Keypad only), 12 DI, 2 AI, 12 Transistor Out",
-                IdentificationString = "V130-33-TA24,4.04(12)"
+                IdentificationString = "13TA24" + DefaultPcomVersionTail
             };
 
             // --- 3. Vision 430 ---
@@ -410,7 +425,7 @@ namespace UnitronicsV350Simulator
                 OnboardAi = 2,
                 OnboardAo = 0,
                 Description = "4.3\" Widescreen Color Touchscreen, 12 DI, 2 AI, 6 Relay, 2 Transistor",
-                IdentificationString = "V430-J-RA22,4.04(12)"
+                IdentificationString = "43RA22" + DefaultPcomVersionTail
             };
             AvailableModels["V430-J-TA24"] = new PlcModelSpec
             {
@@ -427,7 +442,7 @@ namespace UnitronicsV350Simulator
                 OnboardAi = 2,
                 OnboardAo = 0,
                 Description = "4.3\" Widescreen Color Touchscreen, 12 DI, 2 AI, 12 Transistor Out",
-                IdentificationString = "V430-J-TA24,4.04(12)"
+                IdentificationString = "43TA24" + DefaultPcomVersionTail
             };
             AvailableModels["V430-J-RH2"] = new PlcModelSpec
             {
@@ -444,7 +459,7 @@ namespace UnitronicsV350Simulator
                 OnboardAi = 2,
                 OnboardAo = 0,
                 Description = "4.3\" Widescreen Color Touchscreen, 16 DI, 2 AI, 10 Relay, 2 Transistor",
-                IdentificationString = "V430-J-RH2,4.04(12)"
+                IdentificationString = "43RH2 " + DefaultPcomVersionTail
             };
 
             // --- 4. Vision 570 ---
@@ -463,7 +478,7 @@ namespace UnitronicsV350Simulator
                 OnboardAi = 0,
                 OnboardAo = 0,
                 Description = "5.7\" QVGA Color Touchscreen, Modular Architecture (Snap-in I/O slot required)",
-                IdentificationString = "V570-57-T20B,4.04(12)"
+                IdentificationString = "57T2" + DefaultPcomVersionTail
             };
 
             // --- 5. Vision 1040 ---
@@ -482,7 +497,7 @@ namespace UnitronicsV350Simulator
                 OnboardAi = 0,
                 OnboardAo = 0,
                 Description = "10.4\" SVGA Color Touchscreen + Function Keys, Modular (Snap-in I/O slot required)",
-                IdentificationString = "V1040-20-T20B,4.04(12)"
+                IdentificationString = "10T2" + DefaultPcomVersionTail
             };
 
             // --- 6. Vision 1210 ---
@@ -501,7 +516,7 @@ namespace UnitronicsV350Simulator
                 OnboardAi = 0,
                 OnboardAo = 0,
                 Description = "12.1\" SVGA Color Touchscreen, Edge-to-edge Flat Bezel, Modular (Snap-in I/O slot required)",
-                IdentificationString = "V1210-T20BJ,4.04(12)"
+                IdentificationString = "12T2" + DefaultPcomVersionTail
             };
 
             // --- SNAP-IN MODULES (for V570, V1040, V1210) ---
