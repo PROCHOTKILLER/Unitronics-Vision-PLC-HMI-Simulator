@@ -271,6 +271,18 @@ namespace UnitronicsV350Simulator
                 // Get Unit ID response
                 return FormatPcomAsciiResponse(unitId, "UG" + unitId);
             }
+            else if (cmdBody.StartsWith("NMR"))
+            {
+                // Read PLC Name in ASCII mode (UnVsCon2.dll 0x1E2A48..0x1E2CFF):
+                // Returning "ND" (Name Not Defined) causes UnVsCon2.dll (0x1E2CD4) to accept any configured PLC Name
+                plc.Log("PCOM ASCII NMR: Read PLC Name -> returning ND (accept any PLC Name)");
+                return FormatPcomAsciiResponse(unitId, "ND");
+            }
+            else if (cmdBody.StartsWith("NMW"))
+            {
+                // Write PLC Name in ASCII mode
+                return FormatPcomAsciiResponse(unitId, "NM");
+            }
             else if (cmdBody.StartsWith("GP"))
             {
                 // Get PLC Name in ASCII mode (16 chars)
@@ -278,10 +290,10 @@ namespace UnitronicsV350Simulator
                 plcName = plcName.PadRight(16, ' ').Substring(0, 16);
                 return FormatPcomAsciiResponse(unitId, "GP" + plcName);
             }
-            else if (cmdBody.StartsWith("PW"))
+            else if (cmdBody.StartsWith("PW") || cmdBody.StartsWith("EP"))
             {
-                // Password check in ASCII mode (e.g. PWW...) -> acknowledge with "PW"
-                return FormatPcomAsciiResponse(unitId, "PW");
+                // Password / Ethernet Password check in ASCII mode -> acknowledge with 2-char prefix
+                return FormatPcomAsciiResponse(unitId, cmdBody.Substring(0, 2));
             }
 
             // 3. Read System Integers (GF)
@@ -518,12 +530,19 @@ namespace UnitronicsV350Simulator
                     plc.Log("PCOM Binary: OPLC access password check (0x02) -> OK");
                     break;
 
-                case 0x0C: // Get PLC Name
+                case 0x0C: // Read PLC Name (UnCmDrv1.dll z_ReadPlcName 0x03EDDD, called by UnVsCon2.dll 0x1E289E)
                 {
-                    plc.Log("PCOM Binary: Get PLC Name request (0x0C)");
-                    string plcName = (plc != null && plc.Profile != null) ? plc.Profile.SelectedModelName : "V350-35-RA22";
-                    respPayload = Encoding.ASCII.GetBytes(plcName.PadRight(16, '\0').Substring(0, 16));
-                    break;
+                    // UnVsCon2.dll (0x1E27F0..0x1E2951) sets ShowCommMessages = False, calls bResult = z_ReadPlcName(strPlcName),
+                    // and then checks: if (strExpectedPlcName != strPlcName && bResult != False) RaiseError(294).
+                    // Returning resp[12] = 0x00 causes z_ReadPlcName to return bResult = False (0) immediately without UI popups,
+                    // which makes UnVsCon2.dll (0x1E2951: je 0x1E2995) accept ANY PLC Name configured in VisiLogic TCP/IP settings.
+                    plc.Log("PCOM Binary: Read PLC Name request (0x0C) -> bypassing PLC Name lock (accept any PLC Name)");
+                    byte[] nakResp = BuildBinaryResponse(data, offset, opcode, null, details);
+                    nakResp[12] = 0x00;
+                    ushort nakHdrCrc = CalcBinaryCrc(nakResp, 0, 22);
+                    nakResp[22] = (byte)(nakHdrCrc & 0xFF);
+                    nakResp[23] = (byte)((nakHdrCrc >> 8) & 0xFF);
+                    return nakResp;
                 }
 
                 case 0x10: // Where Resource
