@@ -174,8 +174,23 @@ namespace UnitronicsV350Simulator
 
             string hwName = config.Profile != null ? config.Profile.GetModelFullName() : "V350";
             plc.Log(string.Format("Simulator initialization complete ({0}).", hwName));
-            plc.Log("Controller is in clean factory standby state (OPLC Standby).");
-            plc.Log(string.Format("Use 'Load VisiLogic Project' or connect via PCOM TCP port {0}.", port));
+            if (plc.Memory != null)
+            {
+                plc.Log(string.Format("Simulated PLC memory files ready: ROM='{0}' (4 MB), RAM='{1}' (256 KB).",
+                    plc.Memory.RomFilePath, plc.Memory.RamFilePath));
+            }
+
+            string savedProjPath = (plc.Memory != null) ? plc.Memory.GetPersistedProjectPath() : null;
+            if (!string.IsNullOrEmpty(savedProjPath) && File.Exists(savedProjPath))
+            {
+                plc.Log("Restoring persisted project from rom.bin: " + savedProjPath);
+                LoadProjectFile(savedProjPath);
+            }
+            else
+            {
+                plc.Log("Controller is in clean factory standby state (OPLC Standby).");
+                plc.Log(string.Format("Use 'Load VisiLogic Project' or connect via PCOM TCP port {0}.", port));
+            }
         }
 
         private void InitializeComponent()
@@ -1258,6 +1273,11 @@ namespace UnitronicsV350Simulator
         private int watchTableRefreshCounter = 0;
         private void OnUiTimerTick(object sender, EventArgs e)
         {
+            if (plc.State != PlcRunState.RUN && plc.Memory != null)
+            {
+                plc.Memory.SyncRamFromEngine(plc, false);
+            }
+
             // 1. Render HMI screen
             int activePage = (plc.SI[9] > 0) ? plc.SI[9] : 1;
             picScreen.Image = hmiRenderer.RenderScreen(activePage);
@@ -1345,6 +1365,10 @@ namespace UnitronicsV350Simulator
 
             plc.Stop();
             plc.Project = null;
+            if (plc.Memory != null)
+            {
+                plc.Memory.ClearFactoryReset(plc);
+            }
             plc.Reset();
 
             allWatchItems.Clear();
@@ -1909,20 +1933,25 @@ namespace UnitronicsV350Simulator
         private void ShowAboutDialog()
         {
             string hwName = config.Profile != null ? config.Profile.GetModelFullName() : "V350";
+            string romPath = (plc != null && plc.Memory != null) ? plc.Memory.RomFilePath : "rom.bin";
+            string ramPath = (plc != null && plc.Memory != null) ? plc.Memory.RamFilePath : "ram.bin";
             string msg =
-                "Unitronics Vision PLC/HMI Simulator v0.0.13 [Portable]\n\n" +
-                "Version: 0.0.13 Portable (Native Windows .NET 4.0 x86 Application)\n" +
+                "Unitronics Vision PLC/HMI Simulator v0.0.14 [Portable]\n\n" +
+                "Version: 0.0.14 Portable (Native Windows .NET 4.0 x86 Application)\n" +
                 "Active Hardware Profile: " + hwName + "\n" +
                 "Language: " + Localization.CurrentLanguage + "\n\n" +
                 "Key Features:\n" +
                 "• Startup Hardware Configurator (Vision V130..V1210 controllers and EX-A2X expansion modules)\n" +
                 "• Real-time bilingual user interface (English & Polish)\n" +
+                "• Live binary PLC memory images: rom.bin (4 MB Flash ROM) & ram.bin (256 KB RAM + live hex-editor sync)\n" +
                 "• Configurable diagnostic logging (Error, Warn, Info, Debug, Trace)\n" +
                 "• Direct loading of VisiLogic projects (*.vlp, *.vlx, *.udb)\n" +
                 "• Soft-PLC cyclic ladder execution engine\n" +
                 "• Graphical HMI screen renderer with touchscreen and numeric keypad overlay\n" +
                 "• Virtual I/O cabinet with dynamic EX-A2X expansion bus and analog sliders\n" +
                 "• PCOM TCP server compatible with VisiLogic (Download & Online Test)\n\n" +
+                "ROM image: " + romPath + "\n" +
+                "RAM image: " + ramPath + "\n" +
                 "Debugger log file: " + AppLogger.LogFilePath;
 
             MessageBox.Show(msg, "About Unitronics Vision Simulator", MessageBoxButtons.OK, MessageBoxIcon.Information);
@@ -1953,7 +1982,14 @@ namespace UnitronicsV350Simulator
             isScanThreadRunning = false;
             if (uiTimer != null) uiTimer.Stop();
             if (pcomServer != null) pcomServer.Stop();
-            if (plc != null) plc.Stop();
+            if (plc != null)
+            {
+                plc.Stop();
+                if (plc.Memory != null)
+                {
+                    plc.Memory.FlushAll(plc);
+                }
+            }
         }
     }
 

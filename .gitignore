@@ -2,10 +2,12 @@
 *.exe
 **/*.exe
 
-# Logs & local config
+# Logs, local config & simulated PLC memory images
 *.log
 virtualplc_debug.log
 virtualplc_config.json
+rom.bin
+ram.bin
 
 # Build artifacts & temp
 bin/

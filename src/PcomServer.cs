@@ -126,6 +126,10 @@ namespace UnitronicsV350Simulator
             finally
             {
                 try { client.Close(); } catch { }
+                if (plc != null && plc.Memory != null)
+                {
+                    plc.Memory.FlushAll(plc);
+                }
                 if (hasPendingDownloadReload)
                 {
                     CompletePendingDownloadReload();
@@ -524,6 +528,10 @@ namespace UnitronicsV350Simulator
                                 flashMemory[writeAddr + (uint)i] = data[payloadStart + i];
                             }
                         }
+                        if (plc != null && plc.Memory != null)
+                        {
+                            plc.Memory.WritePhysicalMemory(writeAddr, data, payloadStart, availLen);
+                        }
                     }
                     plc.Log(string.Format("PCOM Binary: OPLC program memory block write (0x41, addr=0x{0:X8}, {1} bytes)", writeAddr, dataLen));
                     break;
@@ -537,6 +545,10 @@ namespace UnitronicsV350Simulator
 
                 case 0x45: // Flash & Memory Commit ("Programming Flash and Memory")
                     plc.Log("PCOM Binary: FLASH commit command (0x45) - program successfully downloaded by VisiLogic!");
+                    if (plc != null && plc.Memory != null)
+                    {
+                        plc.Memory.FlushAll(plc);
+                    }
                     TriggerProjectAutoReload();
                     break;
 
@@ -780,7 +792,15 @@ namespace UnitronicsV350Simulator
                     if (reqReadLen == 0) reqReadLen = 256;
                     plc.Log(string.Format("PCOM Binary: Read OPLC memory (0x01, addr=0x{0:X8}, len={1})", readAddr, reqReadLen));
                     respPayload = new byte[reqReadLen];
-                    if (respPayload.Length >= 16)
+                    if (plc != null && plc.Memory != null)
+                    {
+                        byte[] memBytes = plc.Memory.ReadPhysicalMemory(readAddr, reqReadLen);
+                        if (memBytes != null && memBytes.Length > 0)
+                        {
+                            Array.Copy(memBytes, 0, respPayload, 0, Math.Min(memBytes.Length, respPayload.Length));
+                        }
+                    }
+                    else if (respPayload.Length >= 16)
                     {
                         // Populate valid Vision Info Table header so UnVsCon2.dll 0x16F29F (len = arr[5],
                         // arr[len - 2], arr[len - 1]) and 0x16EA39 succeed without subscript or zero-seed errors.
@@ -843,31 +863,26 @@ namespace UnitronicsV350Simulator
 
                 case 0x05: // Read Data Tables Flash (UnCmDrv1.dll 0x041C90, UnPlcDB1.dll 0x0ED335 & 0x0EC817)
                 {
-                    // 46-byte (0x2E) initialized 0-tables Data Tables flash image verified against UnPlcDB1.clsDBServices
-                    byte[] dtFlashImage = new byte[]
-                    {
-                        // [0..15] 16-byte Data Tables flash topic header (totalSize = 46 = 0x2E at [4..7])
-                        0x00, 0x00, 0x00, 0x00, 0x2E, 0x00, 0x00, 0x00,
-                        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                        // [16..19] DesignCRC = 0xE38A6876
-                        0x76, 0x68, 0x8A, 0xE3,
-                        // [20..23] FlashCellsBlock.Length = 0
-                        0x00, 0x00, 0x00, 0x00,
-                        // [24..27] DesignBlock.Length = 18 (0x12)
-                        0x12, 0x00, 0x00, 0x00,
-                        // [28..45] 18-byte compressed 0-tables DesignBlock (UnPlcDB1.clsDBServices)
-                        0x00, 0x63, 0xE0, 0x62, 0x60, 0x60, 0x28, 0xCB,
-                        0xE8, 0x7A, 0xCC, 0xC0, 0x08, 0x00, 0x57, 0x02,
-                        0x0D, 0x0A
-                    };
                     uint dtAddr = BitConverter.ToUInt32(details, 0);
                     ushort dtLen = (ushort)(details[4] | (details[5] << 8));
                     if (dtLen == 0) dtLen = 16;
                     respPayload = new byte[dtLen];
-                    if (dtAddr < dtFlashImage.Length)
+                    if (plc != null && plc.Memory != null)
                     {
-                        int copyLen = Math.Min((int)dtLen, dtFlashImage.Length - (int)dtAddr);
-                        Array.Copy(dtFlashImage, (int)dtAddr, respPayload, 0, copyLen);
+                        byte[] dtBytes = plc.Memory.ReadDataTablesFlash(dtAddr, dtLen);
+                        if (dtBytes != null && dtBytes.Length > 0)
+                        {
+                            Array.Copy(dtBytes, 0, respPayload, 0, Math.Min(dtBytes.Length, respPayload.Length));
+                        }
+                    }
+                    else
+                    {
+                        byte[] dtFlashImage = PlcMemoryStorage.DefaultDataTablesFlashImage;
+                        if (dtAddr < dtFlashImage.Length)
+                        {
+                            int copyLen = Math.Min((int)dtLen, dtFlashImage.Length - (int)dtAddr);
+                            Array.Copy(dtFlashImage, (int)dtAddr, respPayload, 0, copyLen);
+                        }
                     }
                     plc.Log(string.Format("PCOM Binary: Read Data Tables flash (0x05, addr={0}, len={1})", dtAddr, dtLen));
                     break;
@@ -1042,6 +1057,10 @@ namespace UnitronicsV350Simulator
             }
             catch { }
 
+            if (plc != null && plc.Memory != null)
+            {
+                plc.Memory.FlushAll(plc);
+            }
             TriggerProjectAutoReload(true);
         }
 

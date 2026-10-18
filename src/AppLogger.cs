@@ -66,7 +66,7 @@ namespace UnitronicsV350Simulator
 
                     _initialized = true;
                     WriteRaw("================================================================================");
-                    WriteRaw(string.Format("=== Unitronics Vision PLC/HMI Simulator - Debug Session (v0.0.13) ==="));
+                    WriteRaw(string.Format("=== Unitronics Vision PLC/HMI Simulator - Debug Session (v0.0.14) ==="));
                     WriteRaw(string.Format("=== Start Time: {0:yyyy-MM-dd HH:mm:ss.fff} | PID: {1} | OS: {2} | 64BitProc: {3} ===",
                         DateTime.Now, Process.GetCurrentProcess().Id, Environment.OSVersion, Environment.Is64BitProcess));
                     WriteRaw(string.Format("=== Executable Dir: {0} ===", baseDir));

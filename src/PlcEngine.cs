@@ -156,10 +156,12 @@ namespace UnitronicsV350Simulator
         public event Action<string> OnLogMessage;
 
         public HardwareProfile Profile { get; set; }
+        public PlcMemoryStorage Memory { get; private set; }
 
         public PlcEngine(HardwareProfile profile = null)
         {
             Profile = profile ?? (SimulatorConfig.Current != null && SimulatorConfig.Current.Profile != null ? SimulatorConfig.Current.Profile : HardwareProfile.CreateDefaultProfile());
+            Memory = new PlcMemoryStorage();
             ResetMemory();
         }
 
@@ -349,6 +351,15 @@ namespace UnitronicsV350Simulator
             accumMs100ms = 0;
             clock1s.Restart();
             clock100ms.Restart();
+
+            if (Memory != null)
+            {
+                if (Project != null)
+                {
+                    Memory.SaveProjectToRom(Project, Profile);
+                }
+                Memory.SyncRamFromEngine(this, true);
+            }
         }
 
         public void Start()
@@ -365,6 +376,7 @@ namespace UnitronicsV350Simulator
             SB[2] = true;  // Power-Up / First scan bit
             Log("PLC switched to RUN mode (ladder execution started).");
             CycleScan(10); // Execute initial Power-Up scan (SB 2 = 1) immediately upon entering RUN
+            if (Memory != null) Memory.SyncRamFromEngine(this, true);
         }
 
         public void Stop()
@@ -372,6 +384,7 @@ namespace UnitronicsV350Simulator
             State = PlcRunState.STOP;
             Array.Clear(O, 0, O.Length); // Turn off physical outputs in STOP mode
             Array.Clear(AO_Volts, 0, AO_Volts.Length);
+            if (Memory != null) Memory.SyncRamFromEngine(this, true);
             Log("PLC stopped (STOP mode - outputs de-energized).");
             if (OnScanCompleted != null) OnScanCompleted();
         }
@@ -390,7 +403,8 @@ namespace UnitronicsV350Simulator
 
             if (State != PlcRunState.RUN || !HasProgramLoaded)
             {
-                // In STOP mode or without a loaded program: skip ladder execution
+                // In STOP mode or without a loaded program: skip ladder execution, but keep ram.bin synchronized
+                if (Memory != null) Memory.SyncRamFromEngine(this, false);
                 scanStopwatch.Stop();
                 LastScanDurationMs = 0.1;
                 return;
@@ -474,6 +488,11 @@ namespace UnitronicsV350Simulator
             scanStopwatch.Stop();
             LastScanDurationMs = scanStopwatch.Elapsed.TotalMilliseconds;
             SI[0] = (short)Math.Max(1, (int)LastScanDurationMs);
+
+            if (Memory != null)
+            {
+                Memory.SyncRamFromEngine(this, false);
+            }
 
             if (OnScanCompleted != null)
             {

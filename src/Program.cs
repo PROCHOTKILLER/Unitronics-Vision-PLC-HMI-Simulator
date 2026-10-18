@@ -7,8 +7,8 @@ using System.Windows.Forms;
 [assembly: AssemblyDescription("Standalone Unitronics Vision PLC/HMI Hardware Simulator")]
 [assembly: AssemblyCompany("Unitronics Simulator Project")]
 [assembly: AssemblyProduct("Unitronics Vision Virtual PLC")]
-[assembly: AssemblyVersion("0.0.13.0")]
-[assembly: AssemblyFileVersion("0.0.13.0")]
+[assembly: AssemblyVersion("0.0.14.0")]
+[assembly: AssemblyFileVersion("0.0.14.0")]
 
 namespace UnitronicsV350Simulator
 {
@@ -19,7 +19,7 @@ namespace UnitronicsV350Simulator
         /// Initializes configuration, localization, logging, and the Hardware Configuration Wizard.
         /// </summary>
         [STAThread]
-        static void Main()
+        static void Main(string[] args)
         {
             // Load persistent configuration first
             SimulatorConfig config = SimulatorConfig.Load();
@@ -27,6 +27,29 @@ namespace UnitronicsV350Simulator
 
             AppLogger.EnsureInitialized();
             AppLogger.Configure(config);
+
+            if (args != null && args.Length > 0 && args[0] == "--init-memory")
+            {
+                PlcEngine engine = new PlcEngine(config.Profile);
+                string projPath = (args.Length > 1 && System.IO.File.Exists(args[1]))
+                    ? args[1]
+                    : VlpParser.ResolveActiveVisiLogicProjectPath();
+                if (!string.IsNullOrEmpty(projPath) && System.IO.File.Exists(projPath))
+                {
+                    engine.Project = VlpParser.LoadProjectFile(projPath, engine.Log);
+                    engine.ResetMemory();
+                    engine.Start();
+                    for (int i = 0; i < 5; i++) engine.CycleScan(20);
+                }
+                if (engine.Memory != null)
+                {
+                    engine.Memory.FlushAll(engine);
+                    AppLogger.Info(string.Format("Headless --init-memory completed: ROM='{0}', RAM='{1}', SavedProject='{2}', SI[9]={3}, MI[100]={4}",
+                        engine.Memory.RomFilePath, engine.Memory.RamFilePath, engine.Memory.GetPersistedProjectPath() ?? "", engine.SI[9], engine.MI[100]));
+                }
+                return;
+            }
+
             AppLogger.Info("Initializing Windows Forms environment and exception handlers...");
 
             Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
