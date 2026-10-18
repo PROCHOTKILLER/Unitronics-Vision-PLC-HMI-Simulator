@@ -3,6 +3,7 @@ using System.IO;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading;
 
 namespace UnitronicsV350Simulator
@@ -286,7 +287,7 @@ namespace UnitronicsV350Simulator
             else if (cmdBody.StartsWith("GP"))
             {
                 // Get PLC Name in ASCII mode (16 chars)
-                string plcName = (plc != null && plc.Profile != null) ? plc.Profile.SelectedModelName : "V350-35-RA22";
+                string plcName = ResolveExpectedPlcName();
                 plcName = plcName.PadRight(16, ' ').Substring(0, 16);
                 return FormatPcomAsciiResponse(unitId, "GP" + plcName);
             }
@@ -532,17 +533,27 @@ namespace UnitronicsV350Simulator
 
                 case 0x0C: // Read PLC Name (UnCmDrv1.dll z_ReadPlcName 0x03EDDD, called by UnVsCon2.dll 0x1E289E)
                 {
-                    // UnVsCon2.dll (0x1E27F0..0x1E2951) sets ShowCommMessages = False, calls bResult = z_ReadPlcName(strPlcName),
-                    // and then checks: if (strExpectedPlcName != strPlcName && bResult != False) RaiseError(294).
-                    // Returning resp[12] = 0x00 causes z_ReadPlcName to return bResult = False (0) immediately without UI popups,
-                    // which makes UnVsCon2.dll (0x1E2951: je 0x1E2995) accept ANY PLC Name configured in VisiLogic TCP/IP settings.
-                    plc.Log("PCOM Binary: Read PLC Name request (0x0C) -> bypassing PLC Name lock (accept any PLC Name)");
-                    byte[] nakResp = BuildBinaryResponse(data, offset, opcode, null, details);
-                    nakResp[12] = 0x00;
-                    ushort nakHdrCrc = CalcBinaryCrc(nakResp, 0, 22);
-                    nakResp[22] = (byte)(nakHdrCrc & 0xFF);
-                    nakResp[23] = (byte)((nakHdrCrc >> 8) & 0xFF);
-                    return nakResp;
+                    // UnCmDrv1.dll VerifyBinaryResponse (0x04ED24) requires resp[12] == 0x8C (req[12] + 0x80).
+                    // UnCmDrv1.dll z_ReadPlcName (0x03EDDD) converts the 64-byte payload from ASCII to Unicode,
+                    // truncates at the first NUL byte (0x00), and returns outPlcName + bResult = True (-1).
+                    // UnVsCon2.dll (0x1E293C) compares outPlcName against the expected PLC Name configured in
+                    // VisiLogic's TCP/IP Call settings (stored in Current_OPLC.udb ProjectTable ID=86).
+                    string plcName = ResolveExpectedPlcName();
+                    string modelName = (plc != null && plc.Profile != null && !string.IsNullOrEmpty(plc.Profile.SelectedModelName))
+                        ? plc.Profile.SelectedModelName
+                        : "V350-35-RA22";
+                    string family = modelName.Contains("-") ? modelName.Split('-')[0] : modelName;
+
+                    plc.Log("PCOM Binary: Read PLC Name request (0x0C) -> returning '" + plcName + "'");
+                    respPayload = new byte[64];
+                    byte[] nameBytes = Encoding.ASCII.GetBytes(plcName);
+                    Array.Copy(nameBytes, 0, respPayload, 0, Math.Min(nameBytes.Length, 31));
+                    // Null-terminated at respPayload[nameBytes.Length] (already 0x00 in new byte[64])
+
+                    // Also populate model family at offset 44 for CheckEthPassword (0x03EEAD) compatibility
+                    byte[] famBytes = Encoding.ASCII.GetBytes(family.PadRight(6, ' '));
+                    Array.Copy(famBytes, 0, respPayload, 44, Math.Min(famBytes.Length, 6));
+                    break;
                 }
 
                 case 0x10: // Where Resource
@@ -645,6 +656,49 @@ namespace UnitronicsV350Simulator
             // Exact 16-bit two's complement checksum matching UnCmDrv1.dll (0x04E6C3..0x04E6D9): ~(sum % 0x10000) + 1
             int crc = (~(sum % 0x10000) + 1) & 0xFFFF;
             return (ushort)crc;
+        }
+
+        private string ResolveExpectedPlcName()
+        {
+            try
+            {
+                string udbPath = @"C:\Program Files (x86)\Unitronics\Unitronics VisiLogic_C\Data\DB\Current_OPLC.udb";
+                if (File.Exists(udbPath))
+                {
+                    byte[] raw;
+                    using (FileStream fs = new FileStream(udbPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                    {
+                        raw = new byte[fs.Length];
+                        fs.Read(raw, 0, raw.Length);
+                    }
+
+                    string text = Encoding.ASCII.GetString(raw);
+
+                    // Priority 1: Match 127.0.0.1 or localhost entry targeting port 20256 in ProjectTable ID=86 (ePTR_EthernetSettings)
+                    // Format stored by VisiLogic: "<index>\t<ip>\t<plcName>\t20256\t"
+                    Match mLocal = Regex.Match(text, @"(?:127\.0\.0\.1|localhost)\t([^\t\r\n\x00]*)\t20256");
+                    if (mLocal.Success)
+                    {
+                        return mLocal.Groups[1].Value;
+                    }
+
+                    // Priority 2: Match any IPv4 entry targeting port 20256
+                    Match mAny = Regex.Match(text, @"\d+\.\d+\.\d+\.\d+\t([^\t\r\n\x00]*)\t20256");
+                    if (mAny.Success)
+                    {
+                        return mAny.Groups[1].Value;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                if (plc != null)
+                {
+                    plc.Log("Warning reading expected PLC Name from Current_OPLC.udb: " + ex.Message);
+                }
+            }
+
+            return "virtual";
         }
 
         private void TriggerProjectAutoReload()

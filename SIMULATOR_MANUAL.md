@@ -1,8 +1,8 @@
-# Technical Reference & User Manual: Standalone Unitronics Vision PLC/HMI Simulator v0.0.5 [virtualplc.exe]
+# Technical Reference & User Manual: Standalone Unitronics Vision PLC/HMI Simulator v0.0.6 [virtualplc.exe]
 
-## 1. Introduction and Architecture (Version 0.0.5)
+## 1. Introduction and Architecture (Version 0.0.6)
 
-The **`virtualplc.exe`** application (version **0.0.5**) is an autonomous, native hardware emulator for the **Unitronics Vision PLC/HMI** family (including V130, V350, V430, V570, V1040, and V1210), supporting on-board I/O, modular Snap-In units, and the industrial **EX-A2X** expansion I/O bus (up to 8 expansion modules).
+The **`virtualplc.exe`** application (version **0.0.6**) is an autonomous, native hardware emulator for the **Unitronics Vision PLC/HMI** family (including V130, V350, V430, V570, V1040, and V1210), supporting on-board I/O, modular Snap-In units, and the industrial **EX-A2X** expansion I/O bus (up to 8 expansion modules).
 
 The application is compiled as a 100% standalone single Windows executable (.NET Framework 4.0 x86), requiring no installation of third-party runtimes, database servers, web engines, or external COM wrappers.
 
