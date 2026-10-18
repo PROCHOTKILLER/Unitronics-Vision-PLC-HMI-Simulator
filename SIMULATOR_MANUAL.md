@@ -1,8 +1,8 @@
-# Technical Reference & User Manual: Standalone Unitronics Vision PLC/HMI Simulator v0.0.4 [virtualplc.exe]
+# Technical Reference & User Manual: Standalone Unitronics Vision PLC/HMI Simulator v0.0.5 [virtualplc.exe]
 
-## 1. Introduction and Architecture (Version 0.0.4)
+## 1. Introduction and Architecture (Version 0.0.5)
 
-The **`virtualplc.exe`** application (version **0.0.4**) is an autonomous, native hardware emulator for the **Unitronics Vision PLC/HMI** family (including V130, V350, V430, V570, V1040, and V1210), supporting on-board I/O, modular Snap-In units, and the industrial **EX-A2X** expansion I/O bus (up to 8 expansion modules).
+The **`virtualplc.exe`** application (version **0.0.5**) is an autonomous, native hardware emulator for the **Unitronics Vision PLC/HMI** family (including V130, V350, V430, V570, V1040, and V1210), supporting on-board I/O, modular Snap-In units, and the industrial **EX-A2X** expansion I/O bus (up to 8 expansion modules).
 
 The application is compiled as a 100% standalone single Windows executable (.NET Framework 4.0 x86), requiring no installation of third-party runtimes, database servers, web engines, or external COM wrappers.
 
@@ -200,7 +200,7 @@ Repository layout:
 - `PcomServer.cs` – Unitronics PCOM TCP protocol server (:20256) supporting online download.
 
 ### Versioning and Archival Policy (`archive/` Directory):
-- Versioning follows semantic numbers starting from **0.0.1** and increments with each functional change (current: **0.0.4**).
+- Versioning follows semantic numbers starting from **0.0.1** and increments with each functional change (current: **0.0.5**).
 - Prior to compiling a new build, `build.bat` calls `rotate_versions.ps1` to archive the existing `virtualplc.exe` and manual to `archive/vX.Y.Z/`.
 - The `archive/` directory retains **a maximum of 5 recent versions**; older versions are automatically pruned.
 - Official user executables are published to the repository's **Releases** page on GitHub.
@@ -208,6 +208,14 @@ Repository layout:
 ---
 
 ## 8. Version History
+
+- **v0.0.5 (2026-10-18)**:
+  - **VisiLogic Project Download & Online PCOM Compatibility:**
+    - Resolved VisiLogic `ComDrv1.clsAsciiTransmit.prvParseRecievedBlock` Error `13: Type mismatch` by returning the authentic 1-byte hex status payload (`/A00GS02A`) for the PCOM ASCII `GS` (Get System Status) command.
+    - Resolved VisiLogic Error `294: TCP/IP connection cannot be established due to an incorrect PLC Name` by returning neutral handshake status on PCOM Binary `0x0C` (`DataLen=0`, Get PLC Name) and PCOM ASCII `NMR`, allowing seamless connection regardless of the PLC Name configured in VisiLogic.
+    - Implemented complete 100-byte hardware version payload for PCOM Binary `0x0C` (ReadVersion / GetPlcInfo), flash layout metadata for `0x4D` (DLP Flow Metadata), and raw memory access for `0x01` / `0x81`.
+    - Updated `SI 307` hardware model identification codes to match VisiLogic `HW.dat` (`35` for V350, `13` for V130, `43` for V430, `57` for V570, `104` for V1040, `121` for V1210).
+  - Automatic archival of v0.0.4 to `archive/v0.0.4/`.
 
 - **v0.0.4 (2026-10-17)**:
   - **Interactive Hardware Configuration Wizard:** Introduced modal startup dialog allowing explicit configuration of Vision controller family and model (V130, V350, V430, V570, V1040, V1210), Snap-In modules, and up to 8 EX-A2X expansion bus slots.

@@ -6,7 +6,7 @@ Built in C# and .NET Framework 4.0 (x86 architecture compatible with Unitronics 
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Platform](https://img.shields.io/badge/platform-Windows%20x86%20%7C%20x64-lightgrey.svg)
-![Version](https://img.shields.io/badge/version-v0.0.4-green.svg)
+![Version](https://img.shields.io/badge/version-v0.0.5-green.svg)
 ![Target](https://img.shields.io/badge/target-Unitronics%20Vision%20Series-brightgreen.svg)
 
 ---
@@ -130,6 +130,12 @@ The project compiles with Microsoft Visual C# Compiler (`csc.exe`) bundled with 
 
 ## 📜 Version History
 
+- **v0.0.5**:
+  - Fixed VisiLogic TCP/IP Download & Online connection compatibility across all PCOM stages:
+    - Fixed PCOM ASCII `GS` (Get System Status) command to return the authentic 1-byte status format (`/A00GS02A`), resolving `ComDrv1.clsAsciiTransmit.prvParseRecievedBlock` Error `13: Type mismatch`.
+    - Fixed PCOM Binary `0x0C` (Read PLC Name) and ASCII `NMR` handshakes to bypass Error `294: TCP/IP connection cannot be established due to an incorrect PLC Name` regardless of the target PLC Name configured in VisiLogic.
+    - Added full 100-byte binary structure in PCOM Binary `0x0C` (ReadVersion / GetPlcInfo) and valid flash bank metadata in `0x4D` (DLP Flow Metadata) and `0x01`/`0x81` (Read/Write PLC Memory).
+    - Corrected `SI 307` hardware model identification codes to match VisiLogic `HW.dat` (`35` for V350, `13` for V130, `43` for V430, `57` for V570, `104` for V1040, `121` for V1210).
 - **v0.0.4**:
   - Added interactive Startup Hardware Configuration Wizard supporting Vision series models (V130, V350, V430, V570, V1040, V1210), Snap-In modules, and up to 8 EX-A2X expansion slots.
   - Added bilingual runtime UI (English default & Polish) with on-the-fly language switching.

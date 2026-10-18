@@ -2,11 +2,11 @@
 chcp 65001 > nul
 echo ==============================================================================
 echo  Compilation and Versioning: Unitronics Vision PLC/HMI Simulator [virtualplc.exe]
-echo  Target Version: v0.0.4
+echo  Target Version: v0.0.5
 echo ==============================================================================
 echo.
 
-set VERSION=0.0.4
+set VERSION=0.0.5
 set CSC="C:\Windows\Microsoft.NET\Framework\v4.0.30319\csc.exe"
 set OUT_EXE="..\virtualplc.exe"
 
