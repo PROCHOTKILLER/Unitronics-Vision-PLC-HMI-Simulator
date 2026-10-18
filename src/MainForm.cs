@@ -1801,8 +1801,8 @@ namespace UnitronicsV350Simulator
         {
             string hwName = config.Profile != null ? config.Profile.GetModelFullName() : "V350";
             string msg =
-                "Unitronics Vision PLC/HMI Simulator v0.0.10 [Portable]\n\n" +
-                "Version: 0.0.10 Portable (Native Windows .NET 4.0 x86 Application)\n" +
+                "Unitronics Vision PLC/HMI Simulator v0.0.11 [Portable]\n\n" +
+                "Version: 0.0.11 Portable (Native Windows .NET 4.0 x86 Application)\n" +
                 "Active Hardware Profile: " + hwName + "\n" +
                 "Language: " + Localization.CurrentLanguage + "\n\n" +
                 "Key Features:\n" +

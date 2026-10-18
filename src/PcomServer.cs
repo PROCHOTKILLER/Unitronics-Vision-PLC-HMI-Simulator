@@ -562,17 +562,27 @@ namespace UnitronicsV350Simulator
                     break;
                 }
 
-                case 0x07: // Read PLC Status Block (UnVsCon2.dll 0x239EFA / 0x23ADD9 / 0x23B08B -> parsed by 0x1E01B4)
+                case 0x07: // Read PLC Status Block (UnVsCon2.dll 0x1F5600 / 0x2165AD / 0x239EFA / 0x23ADD9 / 0x23B08B -> parsed by 0x1E01B4)
                 {
-                    // UnVsCon2.dll requests 106 bytes (details[4..5] = 0x006A) and 0x1E01B4 indexes up to resp[93].
-                    // 0x23ADA0 requires resp[3] == 0 (no active flash error).
-                    // 0x23B052 requires resp[0] == 'S' (0x53, Stop/Ready mode for download).
+                    // UnVsCon2.dll requests 106 bytes (details[4..5] = 0x006A) and 0x1E01B4 parses:
+                    //   resp[0]  -> struct[+0]  : PLC Mode ('S' = 0x53 Stopped/Ready, 'R' = 0x52 Running)
+                    //   resp[1]  -> struct[+4]  : Flash Status (0x00 = Idle)
+                    //   resp[2]  -> struct[+8]  : Flash & Memory Idle ('I' = 0x49 Idle; checked by 0x1F57B4, 0x21671E, 0x23A698)
+                    //   resp[3]  -> struct[+24] : Flash Error (0x00 = OK; checked by 0x23ADA0)
+                    //   resp[9]  -> struct[+32] : Ready flag (non-zero -> -1; checked by 0x23AB01)
+                    //   resp[10] -> Back-Up Stage ('I' = 0x49 Idle; logged by clsBackUpVlp 0x1F5751)
+                    //   resp[11] -> Back-Up Error (0x00 = OK; logged by clsBackUpVlp 0x1F578A)
                     ushort statusLen = (ushort)(details[4] | (details[5] << 8));
                     if (statusLen < 106) statusLen = 106;
-                    plc.Log(string.Format("PCOM Binary: Read OPLC status block (0x07, len={0}) -> Mode='S'", statusLen));
+                    plc.Log(string.Format("PCOM Binary: Read OPLC status block (0x07, len={0}) -> Mode='S', Flash='I'", statusLen));
                     respPayload = new byte[statusLen];
-                    respPayload[0] = (byte)'S'; // 0x53 = Stopped / Ready for download
-                    respPayload[3] = 0x00;      // 0x00 = Status OK
+                    respPayload[0] = (byte)'S';  // 0x53 = Stopped / Ready for download
+                    respPayload[1] = 0x00;       // 0x00 = Flash status idle
+                    respPayload[2] = (byte)'I';  // 0x49 = Flash and Memory Idle (prevents 0x80040585 FlashAndMemoryNotIdle)
+                    respPayload[3] = 0x00;       // 0x00 = No active flash error
+                    respPayload[9] = 0x01;       // 0x01 = Ready flag true (struct[+32] == -1, prevents 0x80040591)
+                    respPayload[10] = (byte)'I'; // 0x49 = Back-Up Stage Idle
+                    respPayload[11] = 0x00;      // 0x00 = Back-Up Error OK
                     break;
                 }
 
