@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Net;
 using System.Net.Sockets;
@@ -16,6 +17,8 @@ namespace UnitronicsV350Simulator
         private TcpListener listener;
         private Thread listenThread;
         private bool isRunning = false;
+        private readonly Dictionary<uint, byte> flashMemory = new Dictionary<uint, byte>();
+        private readonly object flashLock = new object();
 
         // Event notifying the UI when a project has been downloaded from VisiLogic
         public event Action<string> OnProjectDownloaded;
@@ -481,8 +484,23 @@ namespace UnitronicsV350Simulator
             switch (opcode)
             {
                 case 0x41: // Write Memory (Program / DLU / Font / HMI resource block write)
-                    plc.Log(string.Format("PCOM Binary: OPLC program memory block write (0x41, {0} bytes)", dataLen));
+                {
+                    uint writeAddr = BitConverter.ToUInt32(details, 0);
+                    int payloadStart = offset + 24;
+                    int availLen = Math.Max(0, Math.Min((int)dataLen, length - 27));
+                    if (availLen > 0 && payloadStart + availLen <= data.Length)
+                    {
+                        lock (flashLock)
+                        {
+                            for (int i = 0; i < availLen; i++)
+                            {
+                                flashMemory[writeAddr + (uint)i] = data[payloadStart + i];
+                            }
+                        }
+                    }
+                    plc.Log(string.Format("PCOM Binary: OPLC program memory block write (0x41, addr=0x{0:X8}, {1} bytes)", writeAddr, dataLen));
                     break;
+                }
 
                 case 0x1A: // Get Flash / Buffer Info (called at start of Download Sequence)
                     // Returns 8 bytes: BufferSize = 980 (0x000003D4) at [0..3], SectorSize = 65536 (0x00010000) at [4..7]
@@ -610,42 +628,86 @@ namespace UnitronicsV350Simulator
                     break;
                 }
 
-                case 0x10: // Where Resource (UnCmDrv1.dll 0x0400E7, UnVsCon2.dll clsBackUpVlp 0x1F2BAA & 0x2278ED & 0x227B9C)
+                case 0x10: // Where Resource (UnCmDrv1.dll 0x0400E7, UnVsCon2.dll clsBackUpVlp 0x1F2BAA & 0x2278ED & 0x22854B)
                 {
                     // UnCmDrv1.dll BuildBinaryCommand (0x04CE6E) places the resource ID in header byte 13 (data[offset + 13]).
-                    // UnVsCon2.dll copies 3 int32 values ([0..3]=BaseAddress, [4..7]=TotalSize, [8..11]=SectorSize)
-                    // from bRecievedData.
+                    // Note:
+                    //   - For resType == 0x04 (Fonts Flash, UnVsCon2.dll 0x22854B -> UnHmFnt3.clsMain.VisiDownload2):
+                    //     [0..3] = pFlashAddress (0x00150000), [8..11] = pFlashMemoryType (0 = 64KB sector size).
+                    //     UnHmFnt3.dll passes pFlashMemoryType as z_Services (Bank) to Opcode 0x0A (EraseFlash),
+                    //     and UnCmDrv1.dll (0x04EA30) requires Bank <= 255 (0xFF) or raises VB6 Error 100!
+                    //   - For resType == 0x0F (Fonts RAM, UnVsCon2.dll 0x2285E0):
+                    //     [0..3] = pRamAddress (0x00010000).
+                    //   - For other resources (e.g. 0x0C, 0x11 in UnVsCon2.dll 0x1F2BAA / 0x227A70 / 0x227B92):
+                    //     [0..3] = BaseAddress (0x00300000), [4..7] = TotalSize, [8..11] = SectorSize (0x00010000).
                     byte resType = data[offset + 13];
                     if (resType == 0) resType = details[0];
-                    bool isSmallResource = (resType == 0x11 || details[0] == 0x11 || details[2] == 0x11 || details[4] == 0x11);
                     respPayload = new byte[16];
-                    // [0..3] BaseAddress = 0x00300000 (3 MB offset)
-                    respPayload[0] = 0x00;
-                    respPayload[1] = 0x00;
-                    respPayload[2] = 0x30;
-                    respPayload[3] = 0x00;
-                    // [4..7] TotalSize = 0x00010000 (64 KB) for resource 0x11, or 0x001DE000 (~1.9 MB) for main flash/backup
-                    if (isSmallResource)
+                    if (resType == 0x04)
                     {
+                        // [0..3] pFlashAddress = 0x00150000
+                        respPayload[0] = 0x00;
+                        respPayload[1] = 0x00;
+                        respPayload[2] = 0x15;
+                        respPayload[3] = 0x00;
+                        // [4..7] TotalSize = 0x00080000 (512 KB)
+                        respPayload[4] = 0x00;
+                        respPayload[5] = 0x00;
+                        respPayload[6] = 0x08;
+                        respPayload[7] = 0x00;
+                        // [8..11] pFlashMemoryType = 0 (64KB sectors, Bank = 0 <= 255)
+                        respPayload[8] = 0x00;
+                        respPayload[9] = 0x00;
+                        respPayload[10] = 0x00;
+                        respPayload[11] = 0x00;
+                        plc.Log("PCOM Binary: Locate OPLC Fonts Flash resource (0x10, resType=0x04) -> FlashAddr=0x00150000, MemType=0 (64KB)");
+                    }
+                    else if (resType == 0x0F)
+                    {
+                        // [0..3] pRamAddress = 0x00010000
+                        respPayload[0] = 0x00;
+                        respPayload[1] = 0x00;
+                        respPayload[2] = 0x01;
+                        respPayload[3] = 0x00;
+                        // [4..7] TotalSize = 0x00010000 (64 KB)
                         respPayload[4] = 0x00;
                         respPayload[5] = 0x00;
                         respPayload[6] = 0x01;
                         respPayload[7] = 0x00;
+                        // [8..11] 0
+                        plc.Log("PCOM Binary: Locate OPLC Fonts RAM resource (0x10, resType=0x0F) -> RamAddr=0x00010000");
                     }
                     else
                     {
-                        respPayload[4] = 0x00;
-                        respPayload[5] = 0xE0;
-                        respPayload[6] = 0x1D;
-                        respPayload[7] = 0x00;
+                        bool isSmallResource = (resType == 0x11 || details[0] == 0x11 || details[2] == 0x11 || details[4] == 0x11);
+                        // [0..3] BaseAddress = 0x00300000 (3 MB offset)
+                        respPayload[0] = 0x00;
+                        respPayload[1] = 0x00;
+                        respPayload[2] = 0x30;
+                        respPayload[3] = 0x00;
+                        // [4..7] TotalSize = 0x00010000 (64 KB) for resource 0x11, or 0x001DE000 (~1.9 MB) for main flash/backup
+                        if (isSmallResource)
+                        {
+                            respPayload[4] = 0x00;
+                            respPayload[5] = 0x00;
+                            respPayload[6] = 0x01;
+                            respPayload[7] = 0x00;
+                        }
+                        else
+                        {
+                            respPayload[4] = 0x00;
+                            respPayload[5] = 0xE0;
+                            respPayload[6] = 0x1D;
+                            respPayload[7] = 0x00;
+                        }
+                        // [8..11] SectorSize = 0x00010000 (64 KB)
+                        respPayload[8] = 0x00;
+                        respPayload[9] = 0x00;
+                        respPayload[10] = 0x01;
+                        respPayload[11] = 0x00;
+                        plc.Log(string.Format("PCOM Binary: Locate OPLC resource (0x10, resType=0x{0:X2}, details={1:X2}-{2:X2}-{3:X2}) -> Base=0x00300000, Sector=64KB",
+                            resType, details[0], details[2], details[4]));
                     }
-                    // [8..11] SectorSize = 0x00010000 (64 KB)
-                    respPayload[8] = 0x00;
-                    respPayload[9] = 0x00;
-                    respPayload[10] = 0x01;
-                    respPayload[11] = 0x00;
-                    plc.Log(string.Format("PCOM Binary: Locate OPLC resource (0x10, resType=0x{0:X2}, details={1:X2}-{2:X2}-{3:X2}) -> Base=0x00300000, Sector=64KB",
-                        resType, details[0], details[2], details[4]));
                     break;
                 }
 
@@ -682,13 +744,14 @@ namespace UnitronicsV350Simulator
                     break;
                 }
 
-                case 0x01: // Read Memory (UnCmDrv1.dll 0x041240, UnVsCon2.dll 0x16F383 Info Tables / 0x1EF805 / 0x227D3D)
+                case 0x01: // Read Memory (UnCmDrv1.dll 0x041240, UnVsCon2.dll 0x16F383 Info Tables / UnHmFnt3.dll 0x0308E2 WriteFlash verify)
                 {
+                    uint readAddr = BitConverter.ToUInt32(details, 0);
                     ushort reqReadLen = (ushort)(details[4] | (details[5] << 8));
                     if (reqReadLen == 0) reqReadLen = (ushort)(details[0] | (details[1] << 8));
                     if (reqReadLen == 0) reqReadLen = dataLen;
                     if (reqReadLen == 0) reqReadLen = 256;
-                    plc.Log(string.Format("PCOM Binary: Read OPLC memory (0x01, len={0})", reqReadLen));
+                    plc.Log(string.Format("PCOM Binary: Read OPLC memory (0x01, addr=0x{0:X8}, len={1})", readAddr, reqReadLen));
                     respPayload = new byte[reqReadLen];
                     if (respPayload.Length >= 16)
                     {
@@ -702,6 +765,21 @@ namespace UnitronicsV350Simulator
                         respPayload[5] = 16;          // total Info Table header length = 16 bytes
                         respPayload[14] = (byte)'*';  // arr[16 - 2] non-zero seed byte 1
                         respPayload[15] = (byte)'*';  // arr[16 - 1] non-zero seed byte 2
+                    }
+                    // Overlay any bytes previously written via Opcode 0x41 (e.g. UnHmFnt3.dll WriteFlash header verification)
+                    lock (flashLock)
+                    {
+                        if (flashMemory.Count > 0)
+                        {
+                            for (int i = 0; i < reqReadLen; i++)
+                            {
+                                byte b;
+                                if (flashMemory.TryGetValue(readAddr + (uint)i, out b))
+                                {
+                                    respPayload[i] = b;
+                                }
+                            }
+                        }
                     }
                     break;
                 }
