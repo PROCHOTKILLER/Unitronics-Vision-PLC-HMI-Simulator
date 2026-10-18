@@ -22,12 +22,16 @@ namespace UnitronicsV350Simulator
 
         // Event notifying the UI when a project has been downloaded from VisiLogic
         public event Action<string> OnProjectDownloaded;
+        private DateTime lastAutoReloadUtc = DateTime.MinValue;
+        private volatile bool hasPendingDownloadReload = false;
+        private System.Threading.Timer downloadCompleteTimer;
 
         public bool IsActive { get { return isRunning; } }
 
         public PcomServer(PlcEngine engine)
         {
             plc = engine;
+            downloadCompleteTimer = new System.Threading.Timer(_ => CompletePendingDownloadReload(), null, Timeout.Infinite, Timeout.Infinite);
         }
 
         public void Start(int port = DEFAULT_PORT)
@@ -122,6 +126,10 @@ namespace UnitronicsV350Simulator
             finally
             {
                 try { client.Close(); } catch { }
+                if (hasPendingDownloadReload)
+                {
+                    CompletePendingDownloadReload();
+                }
             }
         }
 
@@ -349,9 +357,9 @@ namespace UnitronicsV350Simulator
             // 5. CPU Control: RUN (CCR, RN)
             else if (cmdBody.StartsWith("CCR") || cmdBody.StartsWith("RN"))
             {
+                TriggerProjectAutoReload();
                 plc.Start();
                 plc.Log("PCOM: PLC engine started by VisiLogic request (RUN mode).");
-                TriggerProjectAutoReload();
                 return FormatPcomAsciiResponse(unitId, cmdBody.Substring(0, 2));
             }
 
@@ -362,10 +370,23 @@ namespace UnitronicsV350Simulator
                 return FormatPcomAsciiResponse(unitId, "CC");
             }
 
-            // 7. CPU Reset / Init (RS, CCI, CCE, CCM)
+            // 7. CPU Reset / Warm Reset (RS, CCI, CCE, CCM) - sent by VisiLogic at the end of Download (/00CCE2B)
             else if (cmdBody.StartsWith("RS") || cmdBody.StartsWith("CCI") || cmdBody.StartsWith("CCE") || cmdBody.StartsWith("CCM"))
             {
-                plc.Reset();
+                bool justReloaded = TriggerProjectAutoReload();
+                if (!justReloaded)
+                {
+                    plc.Reset();
+                    if (plc.HasProgramLoaded)
+                    {
+                        plc.Start();
+                    }
+                }
+                else if (plc.State != PlcRunState.RUN && plc.HasProgramLoaded)
+                {
+                    plc.Start();
+                }
+                plc.Log("PCOM: Warm Reset (" + cmdBody.Substring(0, Math.Min(3, cmdBody.Length)) + ") executed -> PLC in RUN mode.");
                 return FormatPcomAsciiResponse(unitId, cmdBody.Substring(0, 2));
             }
 
@@ -478,6 +499,12 @@ namespace UnitronicsV350Simulator
             Array.Copy(data, offset + 14, details, 0, 6);
 
             plc.Log(string.Format("PCOM Binary REQ: Opcode=0x{0:X2}, DataLen={1}", opcode, dataLen));
+
+            if (opcode == 0x10 || opcode == 0x16 || opcode == 0x18 || opcode == 0x1E ||
+                opcode == 0x20 || opcode == 0x41 || opcode == 0x45 || !plc.HasProgramLoaded)
+            {
+                SchedulePostDownloadAutoReload();
+            }
 
             byte[] respPayload = null;
 
@@ -989,52 +1016,60 @@ namespace UnitronicsV350Simulator
             return "virtual";
         }
 
-        private void TriggerProjectAutoReload()
+        private void SchedulePostDownloadAutoReload()
+        {
+            hasPendingDownloadReload = true;
+            try
+            {
+                if (downloadCompleteTimer != null)
+                {
+                    downloadCompleteTimer.Change(600, Timeout.Infinite);
+                }
+            }
+            catch { }
+        }
+
+        private void CompletePendingDownloadReload()
+        {
+            if (!hasPendingDownloadReload) return;
+            hasPendingDownloadReload = false;
+            try
+            {
+                if (downloadCompleteTimer != null)
+                {
+                    downloadCompleteTimer.Change(Timeout.Infinite, Timeout.Infinite);
+                }
+            }
+            catch { }
+
+            TriggerProjectAutoReload(true);
+        }
+
+        private bool TriggerProjectAutoReload(bool force = false)
         {
             try
             {
-                // Check if VisiLogic registered the currently compiled project in OPLC.ini
-                string iniPath = @"C:\Program Files (x86)\Unitronics\Unitronics VisiLogic_C\Data\DB\OPLC.ini";
-                string projectPath = null;
-
-                if (File.Exists(iniPath))
+                hasPendingDownloadReload = false;
+                if (!force && (DateTime.UtcNow - lastAutoReloadUtc).TotalSeconds < 2.5)
                 {
-                    string[] lines = File.ReadAllLines(iniPath);
-                    bool inSec3000 = false;
-                    foreach (string line in lines)
-                    {
-                        string trimmed = line.Trim();
-                        if (trimmed.StartsWith("[3000]"))
-                        {
-                            inSec3000 = true;
-                            continue;
-                        }
-                        if (inSec3000 && trimmed.StartsWith("["))
-                        {
-                            break;
-                        }
-                        if (inSec3000 && trimmed.StartsWith("3001="))
-                        {
-                            string path = trimmed.Substring(5).Trim();
-                            if (File.Exists(path))
-                            {
-                                projectPath = path;
-                                break;
-                            }
-                        }
-                    }
+                    return true;
                 }
 
+                string projectPath = VlpParser.ResolveActiveVisiLogicProjectPath();
                 if (!string.IsNullOrEmpty(projectPath) && OnProjectDownloaded != null)
                 {
+                    lastAutoReloadUtc = DateTime.UtcNow;
                     plc.Log("PCOM: Automatically loading downloaded project into PLC engine: " + projectPath);
                     OnProjectDownloaded(projectPath);
+                    return true;
                 }
             }
             catch (Exception ex)
             {
                 plc.Log("Error auto-reloading project after Download: " + ex.Message);
             }
+
+            return false;
         }
     }
 }

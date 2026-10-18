@@ -1079,7 +1079,7 @@ namespace UnitronicsV350Simulator
         {
             string projName = (plc.Project != null) ? plc.Project.ProjectName : Localization.T("Status_NoProgram");
             string hwFullName = config.Profile != null ? config.Profile.GetModelFullName() : "V350";
-            this.Text = string.Format(Localization.T("AppTitle"), "0.0.10", hwFullName + " - " + projName);
+            this.Text = string.Format(Localization.T("AppTitle"), "0.0.13", hwFullName + " - " + projName);
 
             // Menu: File
             mnuFile.Text = Localization.T("Menu_File");
@@ -1291,9 +1291,21 @@ namespace UnitronicsV350Simulator
 
                 plc.Stop();
                 plc.Project = proj;
+
+                // Ensure expansion slot 1 (IO-DI8-RO8 at I32..I39 / O32..O39) is enabled if project uses expansion I/O
+                if (plc.Profile != null && (proj.OperandDescriptions.ContainsKey("I32") || proj.OperandDescriptions.ContainsKey("O32")))
+                {
+                    plc.Profile.EnsureSlotsInitialized();
+                    if (!plc.Profile.EnableExpansionBus || plc.Profile.ExpansionSlots[0].ModuleName == "None" || string.IsNullOrEmpty(plc.Profile.ExpansionSlots[0].ModuleName))
+                    {
+                        plc.Profile.EnableExpansionBus = true;
+                        plc.Profile.ExpansionSlots[0].ModuleName = "IO-DI8-RO8";
+                    }
+                }
+
                 plc.ResetMemory();
 
-                hardwarePanel.RefreshOperandLabels();
+                hardwarePanel.RebuildLayout(plc.Profile);
                 PopulateWatchTable(proj);
                 PopulateSubroutineTree(proj);
                 PopulateHmiPageList(proj);
@@ -1350,6 +1362,13 @@ namespace UnitronicsV350Simulator
         {
             if (!plc.HasProgramLoaded)
             {
+                string autoPath = VlpParser.ResolveActiveVisiLogicProjectPath();
+                if (!string.IsNullOrEmpty(autoPath) && File.Exists(autoPath))
+                {
+                    LoadProjectFile(autoPath);
+                    return;
+                }
+
                 MessageBox.Show(
                     Localization.T("Msg_CannotStartNoProgram"),
                     "No Program Loaded", MessageBoxButtons.OK, MessageBoxIcon.Warning);
@@ -1435,13 +1454,15 @@ namespace UnitronicsV350Simulator
                 else if (key.StartsWith("MI")) { type = "MI"; int.TryParse(key.Substring(2), out addr); }
                 else if (key.StartsWith("ML")) { type = "ML"; int.TryParse(key.Substring(2), out addr); }
                 else if (key.StartsWith("DW")) { type = "DW"; int.TryParse(key.Substring(2), out addr); }
-                else if (key.StartsWith("T")) { type = "T"; int.TryParse(key.Substring(1), out addr); }
                 else if (key.StartsWith("SB")) { type = "SB"; int.TryParse(key.Substring(2), out addr); }
                 else if (key.StartsWith("SI")) { type = "SI"; int.TryParse(key.Substring(2), out addr); }
+                else if (key.StartsWith("T")) { type = "T"; int.TryParse(key.Substring(1), out addr); }
+                else if (key.StartsWith("I")) { type = "I"; int.TryParse(key.Substring(1), out addr); }
+                else if (key.StartsWith("O")) { type = "O"; int.TryParse(key.Substring(1), out addr); }
 
                 if (!string.IsNullOrEmpty(type) && !allWatchItems.Exists(x => x.Type == type && x.Address == addr))
                 {
-                    string fmt = (type == "MB" || type == "SB") ? "Bit (0/1)" : (type == "T" ? "Timer (ms)" : "Integer");
+                    string fmt = (type == "MB" || type == "SB" || type == "I" || type == "O") ? "Bit (0/1)" : (type == "T" ? "Timer (ms)" : "Integer");
                     allWatchItems.Add(new WatchItem { Type = type, Address = addr, Name = name, Format = fmt });
                 }
             }
@@ -1594,7 +1615,7 @@ namespace UnitronicsV350Simulator
             var sub = (Subroutine)tvSubroutines.SelectedNode.Tag;
 
             rtbLadderView.Clear();
-            rtbLadderView.AppendText(string.Format("=== SUBROUTINE: {0} (ID: {1}) ===\n\n", sub.Name, sub.FuncId));
+            rtbLadderView.AppendText(string.Format("=== SUBROUTINE: {0} (ID: {1}) ===\n\n", sub.Name, sub.Rungs.Count > 0 ? sub.FuncId.ToString() : "0"));
 
             foreach (var rung in sub.Rungs)
             {
@@ -1624,6 +1645,11 @@ namespace UnitronicsV350Simulator
 
         private void FormatLadderElement(LadderElement elm)
         {
+            if (elm.ElementType == 100 || elm.ElementType == 101)
+            {
+                return;
+            }
+
             string elDesc = "";
             Color elCol = Color.White;
 
@@ -1638,7 +1664,10 @@ namespace UnitronicsV350Simulator
                 {
                     opName = " \"" + plc.Project.OperandDescriptions[opKey] + "\"";
                 }
-                opVal = " [STATE: " + GetOperandLiveString(op.Type, op.Address) + "]";
+                if (op.Type != "CONST")
+                {
+                    opVal = " [STATE: " + GetOperandLiveString(op.Type, op.Address) + "]";
+                }
             }
 
             switch (elm.ElementType)
@@ -1679,17 +1708,89 @@ namespace UnitronicsV350Simulator
                     elDesc = "  --( T )-- [TOGGLE COIL]     " + FormatOpRef(elm.Operands, 0) + opName;
                     elCol = Color.FromArgb(255, 215, 64);
                     break;
+                case 300:
+                case 301:
+                case 302:
+                case 303:
+                case 304:
+                case 305:
+                {
+                    string[] cmpOps = { ">", ">=", "==", "!=", "<=", "<" };
+                    string cmpSym = cmpOps[elm.ElementType - 300];
+                    elDesc = string.Format("  -[COMPARE: {0} {1} {2}]-", FormatOpRef(elm.Operands, 0), cmpSym, FormatOpRef(elm.Operands, 1));
+                    elCol = Color.FromArgb(128, 222, 234);
+                    break;
+                }
+                case 400:
+                case 401:
+                case 402:
+                case 403:
+                case 404:
+                case 405:
+                case 406:
+                case 407:
+                {
+                    string[] mathOps = { "ADD", "SUB", "MUL", "DIV", "MOD", "AND", "OR", "XOR" };
+                    string mOp = mathOps[elm.ElementType - 400];
+                    elDesc = string.Format("  -[{0}]- {1} , {2} ==> {3}", mOp, FormatOpRef(elm.Operands, 0), FormatOpRef(elm.Operands, 1), FormatOpRef(elm.Operands, 2));
+                    elCol = Color.FromArgb(255, 213, 79);
+                    break;
+                }
                 case 601:
-                    elDesc = "  -[STORE]- " + FormatOpRef(elm.Operands, 0) + " ==> " + FormatOpRef(elm.Operands, 1);
-                    elCol = Color.FromArgb(179, 157, 219);
+                    if (elm.Operands.Count >= 2)
+                    {
+                        elDesc = "  -[STORE]- " + FormatOpRef(elm.Operands, 0) + " ==> " + FormatOpRef(elm.Operands, 1);
+                        elCol = Color.FromArgb(179, 157, 219);
+                    }
+                    else
+                    {
+                        int subId = (elm.Operands.Count == 1) ? elm.Operands[0].Address : elm.MoreParamsLng;
+                        string subTitle = (plc.Project != null && plc.Project.Subroutines.ContainsKey(subId)) ? (" (" + plc.Project.Subroutines[subId].Name + ")") : "";
+                        elDesc = string.Format("  -[CALL SUBROUTINE #{0}{1}]-", subId, subTitle);
+                        elCol = Color.FromArgb(255, 204, 0);
+                    }
+                    break;
+                case 602:
+                    elDesc = "  -[RETURN]-";
+                    elCol = Color.FromArgb(176, 190, 197);
+                    break;
+                case 800:
+                    elDesc = string.Format("  -[LOAD HMI DISPLAY #{0}]-", elm.Operands.Count > 0 ? FormatOpRef(elm.Operands, 0) : elm.MoreParamsLng.ToString());
+                    elCol = Color.FromArgb(100, 255, 218);
                     break;
                 case 900:
-                    elDesc = string.Format("  -[CALL SUBROUTINE #{0}]-", elm.MoreParamsLng);
-                    elCol = Color.FromArgb(255, 204, 0);
+                    if (elm.Operands.Count >= 2)
+                    {
+                        elDesc = "  -[STORE]- " + FormatOpRef(elm.Operands, 0) + " ==> " + FormatOpRef(elm.Operands, 1);
+                        elCol = Color.FromArgb(179, 157, 219);
+                    }
+                    else
+                    {
+                        elDesc = string.Format("  -[CALL SUBROUTINE #{0}]-", elm.MoreParamsLng);
+                        elCol = Color.FromArgb(255, 204, 0);
+                    }
                     break;
                 case 1300:
-                    elDesc = "  -[TIMER]- " + FormatOpRef(elm.Operands, 0) + opName + opVal;
-                    elCol = Color.FromArgb(128, 222, 234);
+                    if (elm.Operands.Count >= 6)
+                    {
+                        elDesc = string.Format("  -[LINEARIZE]- X={0} [{1}..{2}] -> [{3}..{4}] ==> Y={5}",
+                            FormatOpRef(elm.Operands, 0), FormatOpRef(elm.Operands, 1), FormatOpRef(elm.Operands, 2),
+                            FormatOpRef(elm.Operands, 3), FormatOpRef(elm.Operands, 4), FormatOpRef(elm.Operands, 5));
+                        elCol = Color.FromArgb(128, 222, 234);
+                    }
+                    else
+                    {
+                        elDesc = "  -[TIMER]- " + FormatOpRef(elm.Operands, 0) + opName + opVal;
+                        elCol = Color.FromArgb(128, 222, 234);
+                    }
+                    break;
+                case 1500:
+                    elDesc = "  -[INC]- " + FormatOpRef(elm.Operands, 0) + opName + opVal;
+                    elCol = Color.FromArgb(179, 157, 219);
+                    break;
+                case 1501:
+                    elDesc = "  -[DEC]- " + FormatOpRef(elm.Operands, 0) + opName + opVal;
+                    elCol = Color.FromArgb(179, 157, 219);
                     break;
                 default:
                     elDesc = string.Format("  -[BLOCK TYPE {0}]- ", elm.ElementType);
@@ -1743,14 +1844,22 @@ namespace UnitronicsV350Simulator
         // ==========================================
         private void PulseFunctionKey(int fIdx, bool isDown)
         {
-            int sbIdx = 30 + fIdx; // SB 31 .. SB 35
-            if (sbIdx < plc.SB.Length)
-            {
-                plc.SB[sbIdx] = isDown;
-            }
+            int sbIdx1 = 30 + fIdx; // SB 31 .. SB 35
+            int sbIdx2 = 40 + fIdx; // SB 41 .. SB 45 (V350-35-TR20 / RA22 F1..F5 system bits)
             if (isDown)
             {
-                plc.Log(string.Format("Function key F{0} pressed (SB {1} = 1)", fIdx, sbIdx));
+                if (sbIdx1 < plc.SB.Length) plc.SB[sbIdx1] = true;
+                if (sbIdx2 < plc.SB.Length) plc.SB[sbIdx2] = true;
+                plc.Log(string.Format("Function key F{0} pressed (SB {1} / SB {2} = 1)", fIdx, sbIdx1, sbIdx2));
+            }
+            else
+            {
+                ThreadPool.QueueUserWorkItem(_ =>
+                {
+                    Thread.Sleep(120);
+                    if (sbIdx1 < plc.SB.Length) plc.SB[sbIdx1] = false;
+                    if (sbIdx2 < plc.SB.Length) plc.SB[sbIdx2] = false;
+                });
             }
             int curPage = (plc.SI[9] > 0) ? plc.SI[9] : 1;
             picScreen.Image = hmiRenderer.RenderScreen(curPage);
@@ -1801,8 +1910,8 @@ namespace UnitronicsV350Simulator
         {
             string hwName = config.Profile != null ? config.Profile.GetModelFullName() : "V350";
             string msg =
-                "Unitronics Vision PLC/HMI Simulator v0.0.12 [Portable]\n\n" +
-                "Version: 0.0.12 Portable (Native Windows .NET 4.0 x86 Application)\n" +
+                "Unitronics Vision PLC/HMI Simulator v0.0.13 [Portable]\n\n" +
+                "Version: 0.0.13 Portable (Native Windows .NET 4.0 x86 Application)\n" +
                 "Active Hardware Profile: " + hwName + "\n" +
                 "Language: " + Localization.CurrentLanguage + "\n\n" +
                 "Key Features:\n" +

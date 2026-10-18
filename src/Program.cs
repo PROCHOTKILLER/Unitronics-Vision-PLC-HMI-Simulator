@@ -7,8 +7,8 @@ using System.Windows.Forms;
 [assembly: AssemblyDescription("Standalone Unitronics Vision PLC/HMI Hardware Simulator")]
 [assembly: AssemblyCompany("Unitronics Simulator Project")]
 [assembly: AssemblyProduct("Unitronics Vision Virtual PLC")]
-[assembly: AssemblyVersion("0.0.12.0")]
-[assembly: AssemblyFileVersion("0.0.12.0")]
+[assembly: AssemblyVersion("0.0.13.0")]
+[assembly: AssemblyFileVersion("0.0.13.0")]
 
 namespace UnitronicsV350Simulator
 {

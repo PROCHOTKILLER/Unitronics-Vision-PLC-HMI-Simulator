@@ -32,13 +32,34 @@ namespace UnitronicsV350Simulator
 
         private static LoadedProject LoadFromVlpZip(string vlpPath, Action<string> log)
         {
+            // Check magic bytes: VisiLogic .vlp can be a ZIP archive (PK\x03\x04) or a raw Jet 4.0 database (\x00\x01\x00\x00)
+            byte[] header = new byte[4];
+            using (FileStream fs = new FileStream(vlpPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+            {
+                if (fs.Length >= 4)
+                {
+                    fs.Read(header, 0, 4);
+                }
+            }
+            if (header[0] == 0x00 && header[1] == 0x01 && header[2] == 0x00 && header[3] == 0x00)
+            {
+                var directProj = LoadFromUdbDatabase(vlpPath, log);
+                directProj.ProjectName = Path.GetFileNameWithoutExtension(vlpPath);
+                directProj.FilePath = vlpPath;
+                return directProj;
+            }
+
             log("Extracting VisiLogic project container: " + Path.GetFileName(vlpPath));
             string tempDir = Path.Combine(Path.GetTempPath(), "V350_VLP_" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(tempDir);
 
             try
             {
-                ZipFile.ExtractToDirectory(vlpPath, tempDir);
+                using (FileStream fs = new FileStream(vlpPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                using (ZipArchive archive = new ZipArchive(fs, ZipArchiveMode.Read))
+                {
+                    archive.ExtractToDirectory(tempDir);
+                }
                 string udbPath = Path.Combine(tempDir, "Current_OPLC.udb");
                 if (!File.Exists(udbPath))
                 {
@@ -79,36 +100,177 @@ namespace UnitronicsV350Simulator
             project.ProjectName = Path.GetFileNameWithoutExtension(udbPath);
             project.FilePath = udbPath;
 
-            string connStr = "Provider=Microsoft.Jet.OLEDB.4.0;Data Source=" + udbPath + ";Jet OLEDB:Database Password=UniOpenSesame;";
-
-            using (OleDbConnection conn = new OleDbConnection(connStr))
+            // If loading directly from VisiLogic's live Current_OPLC.udb, resolve the human-readable project name from OPLC.ini
+            string resolvedVlp = null;
+            if (string.Equals(Path.GetFileName(udbPath), "Current_OPLC.udb", StringComparison.OrdinalIgnoreCase))
             {
-                conn.Open();
-                log("Authenticated successfully with Unitronics Jet 4.0 database.");
+                string udbDir = Path.GetDirectoryName(udbPath) ?? "";
+                resolvedVlp = TryResolveProjectPathFromIni(Path.Combine(udbDir, "OPLC.ini"));
+                if (string.IsNullOrEmpty(resolvedVlp) && !string.IsNullOrEmpty(udbDir))
+                {
+                    try
+                    {
+                        resolvedVlp = TryResolveProjectPathFromIni(Path.GetFullPath(Path.Combine(udbDir, "..", "Data", "OPLC.ini")));
+                    }
+                    catch { }
+                }
+                if (string.IsNullOrEmpty(resolvedVlp))
+                {
+                    resolvedVlp = TryResolveProjectPathFromIni(@"C:\Program Files (x86)\Unitronics\Unitronics VisiLogic_C\Data\DB\OPLC.ini");
+                }
+                if (!string.IsNullOrEmpty(resolvedVlp))
+                {
+                    project.ProjectName = Path.GetFileNameWithoutExtension(resolvedVlp);
+                }
+            }
 
-                // 1. Read hardware configuration from HW_Elements
-                ReadHardwareConfig(conn, project, log);
+            // Copy the .udb file to an isolated temp path using FileShare.ReadWrite so Jet 4.0 OLEDB never fails
+            // with file-locking (.ldb) or Program Files directory permission errors while VisiLogic is open.
+            string tempUdbDir = Path.Combine(Path.GetTempPath(), "V350_UDB_" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(tempUdbDir);
+            string tempUdbPath = Path.Combine(tempUdbDir, "ProjectCopy.udb");
 
-                // 2. Read ladder subroutines from LdrFunctions
-                ReadSubroutines(conn, project, log);
+            try
+            {
+                using (FileStream srcStream = new FileStream(udbPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                using (FileStream dstStream = new FileStream(tempUdbPath, FileMode.Create, FileAccess.Write, FileShare.None))
+                {
+                    srcStream.CopyTo(dstStream);
+                }
 
-                // 3. Read ladder rungs from LdrStrips
-                ReadLadderStrips(conn, project, log);
+                string connStr = "Provider=Microsoft.Jet.OLEDB.4.0;Data Source=" + tempUdbPath + ";Jet OLEDB:Database Password=UniOpenSesame;";
 
-                // 4. Read ladder elements from LdrElements and bindings from LdrElmsOprs
-                ReadLadderElements(conn, project, log);
+                using (OleDbConnection conn = new OleDbConnection(connStr))
+                {
+                    conn.Open();
+                    log("Authenticated successfully with Unitronics Jet 4.0 database.");
 
-                // 5. Read HMI displays from Pages and elements from HMI_Elements
-                ReadHmiPagesAndElements(conn, project, log);
+                    // 1. Read hardware configuration from HW_Elements
+                    ReadHardwareConfig(conn, project, log);
 
-                // 6. Read operand symbol descriptions from LdrOperands / tblWatches
-                ReadOperandNames(conn, project, log);
+                    // 2. Read ladder subroutines from LdrFunctions
+                    ReadSubroutines(conn, project, log);
+
+                    // 3. Read ladder rungs from LdrStrips
+                    ReadLadderStrips(conn, project, log);
+
+                    // 4. Read ladder elements from LdrElements and bindings from LdrElmsOprs
+                    ReadLadderElements(conn, project, log);
+
+                    // 5. Read HMI displays from Pages and elements from HMI_Elements
+                    ReadHmiPagesAndElements(conn, project, log);
+
+                    // 6. Read operand symbol descriptions from LdrOperands / tblWatches
+                    ReadOperandNames(conn, project, log);
+                }
+            }
+            finally
+            {
+                try
+                {
+                    if (Directory.Exists(tempUdbDir))
+                    {
+                        Directory.Delete(tempUdbDir, true);
+                    }
+                }
+                catch { }
+            }
+
+            if (project.Subroutines.Count <= 1 && project.Pages.Count <= 1 && !string.IsNullOrEmpty(resolvedVlp) && File.Exists(resolvedVlp))
+            {
+                log("Current_OPLC.udb is empty; falling back to active .vlp archive: " + resolvedVlp);
+                return LoadFromVlpZip(resolvedVlp, log);
             }
 
             log(string.Format("Project loaded: {0} subroutines, {1} HMI displays, {2} operand descriptions.",
                 project.Subroutines.Count, project.Pages.Count, project.OperandDescriptions.Count));
 
             return project;
+        }
+
+        public static string TryResolveProjectPathFromIni(string iniPath)
+        {
+            if (string.IsNullOrEmpty(iniPath) || !File.Exists(iniPath)) return null;
+
+            System.Text.Encoding[] encodings = new System.Text.Encoding[]
+            {
+                System.Text.Encoding.Default,
+                System.Text.Encoding.UTF8
+            };
+
+            foreach (var enc in encodings)
+            {
+                try
+                {
+                    string[] lines = File.ReadAllLines(iniPath, enc);
+                    foreach (string line in lines)
+                    {
+                        string trimmed = line.Trim();
+                        if (trimmed.StartsWith("3001=", StringComparison.OrdinalIgnoreCase) ||
+                            trimmed.StartsWith("LastLoadedFileName=", StringComparison.OrdinalIgnoreCase))
+                        {
+                            int eqIdx = trimmed.IndexOf('=');
+                            if (eqIdx > 0)
+                            {
+                                string candidate = trimmed.Substring(eqIdx + 1).Trim().Trim('"');
+                                int driveColon = candidate.IndexOf(":\\");
+                                if (driveColon > 1)
+                                {
+                                    candidate = candidate.Substring(driveColon - 1).Trim();
+                                }
+                                if (!string.IsNullOrEmpty(candidate) && File.Exists(candidate))
+                                {
+                                    return candidate;
+                                }
+                            }
+                        }
+                    }
+                }
+                catch { }
+            }
+
+            return null;
+        }
+
+        public static string ResolveActiveVisiLogicProjectPath()
+        {
+            string progFilesDb = @"C:\Program Files (x86)\Unitronics\Unitronics VisiLogic_C\Data\DB";
+            string virtualStoreDb = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                @"VirtualStore\Program Files (x86)\Unitronics\Unitronics VisiLogic_C\Data\DB");
+
+            string iniPath = Path.Combine(progFilesDb, "OPLC.ini");
+            string vsIniPath = Path.Combine(virtualStoreDb, "OPLC.ini");
+            if (File.Exists(vsIniPath) && (!File.Exists(iniPath) || File.GetLastWriteTimeUtc(vsIniPath) >= File.GetLastWriteTimeUtc(iniPath)))
+            {
+                iniPath = vsIniPath;
+            }
+
+            string udbPath = Path.Combine(progFilesDb, "Current_OPLC.udb");
+            string vsUdbPath = Path.Combine(virtualStoreDb, "Current_OPLC.udb");
+            if (File.Exists(vsUdbPath) && (!File.Exists(udbPath) || File.GetLastWriteTimeUtc(vsUdbPath) >= File.GetLastWriteTimeUtc(udbPath)))
+            {
+                udbPath = vsUdbPath;
+            }
+
+            string vlpPath = TryResolveProjectPathFromIni(iniPath);
+            if (string.IsNullOrEmpty(vlpPath) && iniPath != Path.Combine(progFilesDb, "OPLC.ini"))
+            {
+                vlpPath = TryResolveProjectPathFromIni(Path.Combine(progFilesDb, "OPLC.ini"));
+            }
+
+            string projectPath = vlpPath;
+
+            if (File.Exists(udbPath))
+            {
+                if (string.IsNullOrEmpty(vlpPath) ||
+                    File.GetLastWriteTimeUtc(udbPath) > File.GetLastWriteTimeUtc(vlpPath))
+                {
+                    projectPath = udbPath;
+                }
+            }
+
+            return projectPath;
         }
 
         private static void ReadHardwareConfig(OleDbConnection conn, LoadedProject project, Action<string> log)
@@ -210,6 +372,59 @@ namespace UnitronicsV350Simulator
         {
             try
             {
+                // 0. Preload direct constants (OprndType 15, 34, 35, 37, 38), Timer Presets (OprndType 11),
+                // and Power-Up register values from LdrOperands
+                var constValues = new Dictionary<long, int>();
+                try
+                {
+                    using (var cmdConst = conn.CreateCommand())
+                    {
+                        cmdConst.CommandText = "SELECT OprndType, OprndAddress, OprndPowerUp, OprndEnablePowerUp FROM LdrOperands";
+                        using (var rc = cmdConst.ExecuteReader())
+                        {
+                            while (rc.Read())
+                            {
+                                int opType = rc["OprndType"] != DBNull.Value ? Convert.ToInt32(rc["OprndType"]) : 0;
+                                int opAddr = rc["OprndAddress"] != DBNull.Value ? Convert.ToInt32(rc["OprndAddress"]) : 0;
+                                string rawPwr = rc["OprndPowerUp"] != DBNull.Value ? rc["OprndPowerUp"].ToString().Replace("\0", "").Trim() : "";
+                                bool enPwr = rc["OprndEnablePowerUp"] != DBNull.Value && Convert.ToInt32(rc["OprndEnablePowerUp"]) != 0;
+
+                                int parsedVal = 0;
+                                double parsedDbl = 0;
+                                bool hasVal = int.TryParse(rawPwr, out parsedVal);
+                                if (!hasVal && double.TryParse(rawPwr, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out parsedDbl))
+                                {
+                                    parsedVal = (int)parsedDbl;
+                                    hasVal = true;
+                                }
+
+                                if (opType == 15 || opType == 34 || opType == 35 || opType == 37 || opType == 38)
+                                {
+                                    long constKey = (((long)opType) << 32) | ((uint)opAddr);
+                                    constValues[constKey] = hasVal ? parsedVal : 0;
+                                }
+                                else if (opType == 11 && hasVal && parsedVal > 0)
+                                {
+                                    // Timer preset in LdrOperands is stored in 10 ms units (e.g. 500 = 5000 ms = 5.0 s)
+                                    project.TimerPresets[opAddr] = parsedVal * 10;
+                                }
+                                else if (enPwr && hasVal)
+                                {
+                                    string tName = MapOperandTypeNumber(opType);
+                                    if (!string.IsNullOrEmpty(tName) && tName != "CONST")
+                                    {
+                                        project.PowerUpValues[tName + opAddr] = parsedVal;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                catch (Exception exConst)
+                {
+                    log("LdrOperands constants/presets info: " + exConst.Message);
+                }
+
                 // Temporary lookup map StripId -> LadderRung
                 var rungMap = new Dictionary<int, LadderRung>();
                 foreach (var sub in project.Subroutines.Values)
@@ -220,11 +435,11 @@ namespace UnitronicsV350Simulator
                     }
                 }
 
-                // Read ladder elements
+                // Read ladder elements ordered by StripID, Ys, Xs
                 var elementMap = new Dictionary<int, LadderElement>();
                 using (var cmd = conn.CreateCommand())
                 {
-                    cmd.CommandText = "SELECT ElmntID, StripID, ElmntType, Xs, Ys, Dx, Dy, MoreParamsStr, MoreParamsLng FROM LdrElements ORDER BY StripID, Xs";
+                    cmd.CommandText = "SELECT ElmntID, StripID, ElmntType, Xs, Ys, Dx, Dy, MoreParamsStr, MoreParamsLng FROM LdrElements ORDER BY StripID, Ys, Xs";
                     using (var r = cmd.ExecuteReader())
                     {
                         while (r.Read())
@@ -261,9 +476,11 @@ namespace UnitronicsV350Simulator
                 }
 
                 // Read operand bindings from LdrElmsOprs
+                // Ordering by OprndOutIdx, OprndInIdx guarantees that input operands (OprndOutIdx=0, OprndInIdx=1..N)
+                // precede output operands (OprndOutIdx=1..M, OprndInIdx=0).
                 using (var cmd2 = conn.CreateCommand())
                 {
-                    cmd2.CommandText = "SELECT ElmntID, Elmnt_Oprnd_Type, Elmnt_Oprnd_Adrs FROM LdrElmsOprs ORDER BY ElmntID";
+                    cmd2.CommandText = "SELECT ElmntID, Elmnt_Oprnd_Type, Elmnt_Oprnd_Adrs FROM LdrElmsOprs ORDER BY ElmntID, OprndOutIdx, OprndInIdx";
                     using (var r2 = cmd2.ExecuteReader())
                     {
                         while (r2.Read())
@@ -273,13 +490,32 @@ namespace UnitronicsV350Simulator
                             int opAddr = Convert.ToInt32(r2["Elmnt_Oprnd_Adrs"]);
 
                             string opTypeName = MapOperandTypeNumber(opTypeNum);
+                            int constVal = opAddr;
+
+                            if (opTypeNum == 15 || opTypeNum == 34 || opTypeNum == 35 || opTypeNum == 37 || opTypeNum == 38)
+                            {
+                                opTypeName = "CONST";
+                                long constKey = (((long)opTypeNum) << 32) | ((uint)opAddr);
+                                int lookedUp;
+                                if (constValues.TryGetValue(constKey, out lookedUp))
+                                {
+                                    constVal = lookedUp;
+                                }
+                            }
+                            else if (opTypeNum == 30 || opTypeNum == 31)
+                            {
+                                // 30 = JHP (Jump to HMI Page ID), 31 = CS (Call Subroutine ID)
+                                opTypeName = "CONST";
+                                constVal = opAddr;
+                            }
+
                             if (elementMap.ContainsKey(elId))
                             {
                                 elementMap[elId].Operands.Add(new OperandRef
                                 {
                                     Type = opTypeName,
                                     Address = opAddr,
-                                    ConstValue = opAddr
+                                    ConstValue = constVal
                                 });
                             }
                         }
@@ -484,8 +720,7 @@ namespace UnitronicsV350Simulator
                 case 10: return "O";
                 case 11: return "T";
                 case 12: return "C";
-                case 16:
-                case 37: return "DW";
+                case 16: return "DW";
                 case 36: return "SDW";
                 default: return "CONST";
             }

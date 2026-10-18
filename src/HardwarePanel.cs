@@ -166,7 +166,7 @@ namespace UnitronicsV350Simulator
                 xOffset += 265;
             }
 
-            // 2. EX-A2X expansion module input groups
+            // 2. EX-A2X expansion module input groups (Unitronics expansion slots start at I32, +16 per slot)
             if (profile.EnableExpansionBus && profile.ExpansionSlots != null)
             {
                 for (int s = 0; s < profile.ExpansionSlots.Count; s++)
@@ -175,7 +175,8 @@ namespace UnitronicsV350Simulator
                     var expSpec = profile.GetExpansionSpec(slot.ModuleName);
                     if (expSpec.Di > 0)
                     {
-                        int startAddr = currentInputAddr;
+                        int startAddr = Math.Max(currentInputAddr, 32 + s * 16);
+                        currentInputAddr = startAddr;
                         int endAddr = startAddr + expSpec.Di - 1;
 
                         var grpSlot = new GroupBox
@@ -217,6 +218,8 @@ namespace UnitronicsV350Simulator
                 Margin = new Padding(2)
             };
 
+            bool initState = (inputIdx < plc.I.Length) && plc.I[inputIdx];
+
             // Status LED
             var led = new Label
             {
@@ -224,7 +227,7 @@ namespace UnitronicsV350Simulator
                 Height = 14,
                 Left = 4,
                 Top = 7,
-                BackColor = Color.FromArgb(60, 65, 75),
+                BackColor = initState ? Color.FromArgb(0, 230, 118) : Color.FromArgb(60, 65, 75),
                 BorderStyle = BorderStyle.FixedSingle
             };
             lblInputLeds[inputIdx] = led;
@@ -236,11 +239,12 @@ namespace UnitronicsV350Simulator
                 Left = 24,
                 Top = 4,
                 Width = 50,
+                Checked = initState,
                 ForeColor = Color.White
             };
             chk.CheckedChanged += (s, e) =>
             {
-                if (inputIdx < plc.I.Length)
+                if (inputIdx < plc.I.Length && plc.I[inputIdx] != chk.Checked)
                 {
                     plc.I[inputIdx] = chk.Checked;
                 }
@@ -326,7 +330,7 @@ namespace UnitronicsV350Simulator
                 xOffset += 265;
             }
 
-            // 2. EX-A2X expansion module output groups
+            // 2. EX-A2X expansion module output groups (Unitronics expansion slots start at O32, +16 per slot)
             if (profile.EnableExpansionBus && profile.ExpansionSlots != null)
             {
                 for (int s = 0; s < profile.ExpansionSlots.Count; s++)
@@ -335,7 +339,8 @@ namespace UnitronicsV350Simulator
                     var expSpec = profile.GetExpansionSpec(slot.ModuleName);
                     if (expSpec.TotalDo > 0)
                     {
-                        int startAddr = currentOutputAddr;
+                        int startAddr = Math.Max(currentOutputAddr, 32 + s * 16);
+                        currentOutputAddr = startAddr;
                         int endAddr = startAddr + expSpec.TotalDo - 1;
 
                         var grpSlot = new GroupBox
@@ -437,7 +442,7 @@ namespace UnitronicsV350Simulator
             for (int i = 0; i < Math.Min(totalAi, 16); i++)
             {
                 int aiIdx = i;
-                int miRegister = 200 + aiIdx;
+                int miRegister = 100 + aiIdx;
 
                 var lblTitle = new Label
                 {
@@ -450,17 +455,21 @@ namespace UnitronicsV350Simulator
                 };
                 lblAnalogLabels[aiIdx] = lblTitle;
 
+                int initVal = (miRegister < plc.MI.Length && plc.MI[miRegister] > 0 && plc.MI[miRegister] <= 4095)
+                    ? plc.MI[miRegister]
+                    : ((aiIdx == 0) ? 220 : (aiIdx == 1 ? 450 : 0));
+
                 var track = new TrackBar
                 {
                     Left = 20,
                     Top = yPos + 22,
                     Width = 320,
                     Minimum = 0,
-                    Maximum = 1023,
-                    Value = (aiIdx < 2) ? 220 : 0, // Default ambient temperature 22.0 C
-                    TickFrequency = 100,
-                    SmallChange = 1,
-                    LargeChange = 50
+                    Maximum = 4095,
+                    Value = initVal,
+                    TickFrequency = 256,
+                    SmallChange = 10,
+                    LargeChange = 100
                 };
                 trackAnalogs[aiIdx] = track;
 
@@ -481,31 +490,34 @@ namespace UnitronicsV350Simulator
                 {
                     Left = 440,
                     Top = yPos + 26,
-                    Width = 140,
+                    Width = 160,
                     ForeColor = Color.FromArgb(200, 220, 240)
                 };
 
-                Action updateAi = () =>
+                Action<bool> updateAi = (writePlc) =>
                 {
                     short rawVal = (short)num.Value;
-                    if (miRegister < plc.MI.Length) plc.MI[miRegister] = rawVal;
-                    double volts = (rawVal / 1023.0) * 10.0;
-                    double tempC = rawVal / 10.0;
-                    lblVal.Text = string.Format("{0:F1} V  ({1:F1} °C)", volts, tempC);
+                    if (writePlc && miRegister < plc.MI.Length) plc.MI[miRegister] = rawVal;
+                    if (aiIdx == 0)
+                        lblVal.Text = string.Format("{0:F1} °C  (MI{1}={2})", rawVal / 10.0, miRegister, rawVal);
+                    else if (aiIdx == 1)
+                        lblVal.Text = string.Format("{0:F1} %RH  (MI{1}={2})", rawVal / 10.0, miRegister, rawVal);
+                    else
+                        lblVal.Text = string.Format("Raw: {0}", rawVal);
                 };
 
                 track.ValueChanged += (s, e) =>
                 {
                     num.Value = track.Value;
-                    updateAi();
+                    updateAi(true);
                 };
                 num.ValueChanged += (s, e) =>
                 {
                     if (num.Value <= track.Maximum) track.Value = (int)num.Value;
-                    updateAi();
+                    updateAi(true);
                 };
 
-                updateAi();
+                updateAi(false);
 
                 container.Controls.AddRange(new Control[] { lblTitle, track, num, lblVal });
                 yPos += 68;
@@ -520,7 +532,7 @@ namespace UnitronicsV350Simulator
             for (int i = 0; i < Math.Min(totalAo, 8); i++)
             {
                 int aoIdx = i;
-                int miRegister = 280 + aoIdx;
+                int miRegister = 110 + aoIdx;
 
                 var lblTitle = new Label
                 {
@@ -567,11 +579,23 @@ namespace UnitronicsV350Simulator
             {
                 this.BeginInvoke(new Action(() =>
                 {
-                    // Update digital output LEDs
-                    int totalDo = profile.GetTotalDo();
-                    for (int i = 0; i < totalDo && i < lblOutputLeds.Length; i++)
+                    // Update digital input checkboxes & LEDs across all mapped addresses (including I32..I39)
+                    for (int i = 0; i < chkInputs.Length && i < plc.I.Length; i++)
                     {
-                        if (lblOutputLeds[i] != null && i < plc.O.Length)
+                        if (chkInputs[i] != null && chkInputs[i].Checked != plc.I[i])
+                        {
+                            chkInputs[i].Checked = plc.I[i];
+                        }
+                        if (lblInputLeds[i] != null)
+                        {
+                            UpdateLedColor(lblInputLeds[i], plc.I[i], Color.FromArgb(0, 230, 118));
+                        }
+                    }
+
+                    // Update digital output LEDs across all mapped addresses (including O32..O39)
+                    for (int i = 0; i < lblOutputLeds.Length && i < plc.O.Length; i++)
+                    {
+                        if (lblOutputLeds[i] != null)
                         {
                             UpdateLedColor(lblOutputLeds[i], plc.O[i], Color.FromArgb(255, 140, 0));
                         }
@@ -611,9 +635,16 @@ namespace UnitronicsV350Simulator
         {
             if (plc.Project == null) return;
 
-            int totalDi = profile.GetTotalDi();
-            for (int i = 0; i < totalDi && i < lblInputTexts.Length; i++)
+            for (int i = 0; i < lblInputTexts.Length; i++)
             {
+                if (chkInputs[i] != null && i < plc.I.Length)
+                {
+                    chkInputs[i].Checked = plc.I[i];
+                }
+                if (lblInputLeds[i] != null && i < plc.I.Length)
+                {
+                    UpdateLedColor(lblInputLeds[i], plc.I[i], Color.FromArgb(0, 230, 118));
+                }
                 if (lblInputTexts[i] == null) continue;
                 string key = "I" + i;
                 string desc;
@@ -623,15 +654,37 @@ namespace UnitronicsV350Simulator
                 }
             }
 
-            int totalDo = profile.GetTotalDo();
-            for (int i = 0; i < totalDo && i < lblOutputTexts.Length; i++)
+            for (int i = 0; i < lblOutputTexts.Length; i++)
             {
+                if (lblOutputLeds[i] != null && i < plc.O.Length)
+                {
+                    UpdateLedColor(lblOutputLeds[i], plc.O[i], Color.FromArgb(255, 140, 0));
+                }
                 if (lblOutputTexts[i] == null) continue;
                 string key = "O" + i;
                 string desc;
                 if (plc.Project.OperandDescriptions.TryGetValue(key, out desc))
                 {
                     lblOutputTexts[i].Text = desc;
+                }
+            }
+
+            int totalAi = profile.GetTotalAi();
+            for (int i = 0; i < totalAi && i < lblAnalogLabels.Length; i++)
+            {
+                int miReg = 100 + i;
+                if (lblAnalogLabels[i] != null)
+                {
+                    string desc;
+                    if (plc.Project.OperandDescriptions.TryGetValue("MI" + miReg, out desc) ||
+                        plc.Project.OperandDescriptions.TryGetValue("AN" + i, out desc))
+                    {
+                        lblAnalogLabels[i].Text = string.Format("AI{0} / MI{1} [{2}]", i, miReg, desc);
+                    }
+                }
+                if (numAnalogs[i] != null && miReg < plc.MI.Length && plc.MI[miReg] >= 0 && plc.MI[miReg] <= 4095)
+                {
+                    numAnalogs[i].Value = plc.MI[miReg];
                 }
             }
         }

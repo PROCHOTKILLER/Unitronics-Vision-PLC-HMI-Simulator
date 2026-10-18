@@ -305,6 +305,13 @@ namespace UnitronicsV350Simulator
                 isBitActive = plc.MB[elm.TouchOprndAddr];
             }
 
+            bool isCycleSelectorTab = elm.Text != null &&
+                (elm.Text.IndexOf("BIEZACY", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                 elm.Text.IndexOf("CYKL -", StringComparison.OrdinalIgnoreCase) >= 0);
+            bool isCycleTabActive = isCycleSelectorTab &&
+                ((elm.TouchOprndAddr == 70 && plc.MI[72] == 1) ||
+                 (elm.TouchOprndAddr >= 71 && elm.TouchOprndAddr <= 73 && plc.MI[72] == -(elm.TouchOprndAddr - 70)));
+
             Color topCol, botCol, borderCol, textCol;
             if (isDown)
             {
@@ -313,9 +320,9 @@ namespace UnitronicsV350Simulator
                 borderCol = Color.FromArgb(80, 90, 110);
                 textCol = Color.Black;
             }
-            else if (isBitActive && (elm.TouchOprndAddr == 40 || (elm.TouchOprndAddr >= 70 && elm.TouchOprndAddr <= 104)))
+            else if (isCycleTabActive || (!isCycleSelectorTab && isBitActive && (elm.TouchOprndAddr == 40 || (elm.TouchOprndAddr >= 70 && elm.TouchOprndAddr <= 79) || (elm.TouchOprndAddr >= 90 && elm.TouchOprndAddr <= 104))))
             {
-                // Active toggle/manual switch button state
+                // Active toggle/manual switch button or selected cycle tab state
                 topCol = Color.FromArgb(0, 200, 90);
                 botCol = Color.FromArgb(0, 140, 60);
                 borderCol = Color.FromArgb(0, 255, 120);
@@ -335,7 +342,7 @@ namespace UnitronicsV350Simulator
                 g.FillRectangle(brush, rect);
                 g.DrawRectangle(pen, rect);
 
-                if (!isDown && !isBitActive)
+                if (!isDown && !isBitActive && !isCycleTabActive)
                 {
                     g.DrawLine(Pens.White, rect.Left + 1, rect.Top + 1, rect.Right - 1, rect.Top + 1);
                     g.DrawLine(Pens.White, rect.Left + 1, rect.Top + 1, rect.Left + 1, rect.Bottom - 1);
@@ -361,7 +368,21 @@ namespace UnitronicsV350Simulator
             string opType = VlpParser.MapOperandTypeNumber(elm.VarOprndType);
             if (opType == "O" && elm.VarOprndAddr >= 0 && elm.VarOprndAddr < plc.O.Length)
             {
-                isActive = plc.O[elm.VarOprndAddr];
+                if (elm.VarOprndAddr == 5)
+                {
+                    // On Pages 1, 39, 41: left indicator (Xs < 160) is NAWIEW VFD1 (O6/O5), right indicator (Xs >= 160) is WYCIAG VFD2 (O7/O5)
+                    isActive = (elm.Xs >= 160) ? (plc.O[7] || plc.O[5]) : (plc.O[6] || plc.O[5]);
+                }
+                else if ((elm.VarOprndAddr == 3 || elm.VarOprndAddr == 4) && elm.Ys == 109)
+                {
+                    // Page 1 SEK 1..6 fan indicators: check O[addr] or manual fan bit MB[90..95]
+                    int secIdx = (elm.Xs < 50) ? 0 : (elm.Xs < 100) ? 1 : (elm.Xs < 150) ? 2 : (elm.Xs < 200) ? 3 : (elm.Xs < 250) ? 4 : 5;
+                    isActive = plc.O[elm.VarOprndAddr] || (!plc.MB[1] && plc.MB[90 + secIdx]);
+                }
+                else
+                {
+                    isActive = plc.O[elm.VarOprndAddr];
+                }
             }
             else if (opType == "MB" && elm.VarOprndAddr >= 0 && elm.VarOprndAddr < plc.MB.Length)
             {
@@ -369,7 +390,14 @@ namespace UnitronicsV350Simulator
             }
             else if (elm.VarOprndAddr >= 0 && elm.VarOprndAddr < plc.O.Length)
             {
-                isActive = plc.O[elm.VarOprndAddr];
+                if (elm.VarOprndAddr == 5)
+                {
+                    isActive = (elm.Xs >= 160) ? (plc.O[7] || plc.O[5]) : (plc.O[6] || plc.O[5]);
+                }
+                else
+                {
+                    isActive = plc.O[elm.VarOprndAddr];
+                }
             }
 
             Color bgCol = isActive ? Color.FromArgb(0, 180, 80) : Color.FromArgb(60, 72, 88);
@@ -392,6 +420,60 @@ namespace UnitronicsV350Simulator
             }
         }
 
+        private int GetDisplayNumericValue(HmiElementDef elm)
+        {
+            string opType = VlpParser.MapOperandTypeNumber(elm.VarOprndType);
+            string tag = (elm.Text ?? "").Trim().ToUpperInvariant();
+
+            // In Komora 9, HMI displays use MI 1 for RH_Act / BAR_RH / RH_PV / Variable 48 while Ladder uses MI 1 for raw Pt100 and MI 101 for scaled RH (0.1 %RH)
+            if (opType == "MI" && elm.VarOprndAddr == 1)
+            {
+                return plc.MI[101] / 10;
+            }
+
+            // In Komora 9, HMI Page 36/40 uses MI 30 for SP_Min / SP_Czas (minutes) while Ladder uses MI 30 for STB safety limit (95.0 °C)
+            if (opType == "MI" && elm.VarOprndAddr == 30)
+            {
+                return (int)(plc.ML[50] / 60);
+            }
+
+            // In Komora 9, HMI Page 36/38 uses MI 50 for Grz_Il / Grz_Aktywne / BAR_GRZ / ACT_STG while Ladder uses MI 50 for Nr_Aktualnego_Kroku
+            if (opType == "MI" && elm.VarOprndAddr == 50)
+            {
+                int stages = 0;
+                for (int s = 0; s < 6; s++)
+                {
+                    if (plc.O[33 + s] || plc.O[9 + s]) stages++;
+                }
+                return stages;
+            }
+
+            if (opType == "MI" && elm.VarOprndAddr == 34)
+            {
+                return plc.MI[56];
+            }
+
+            if (opType == "MI" && elm.VarOprndAddr == 70 && tag.Contains("REC"))
+            {
+                return plc.MI[51];
+            }
+
+            if (opType == "MI" && elm.VarOprndAddr == 71 && tag.Contains("KROK"))
+            {
+                return 6;
+            }
+
+            if (opType == "MI" && elm.VarOprndAddr >= 0 && elm.VarOprndAddr < plc.MI.Length)
+            {
+                return plc.MI[elm.VarOprndAddr];
+            }
+            if (opType == "ML" && elm.VarOprndAddr >= 0 && elm.VarOprndAddr < plc.ML.Length)
+            {
+                return plc.ML[elm.VarOprndAddr];
+            }
+            return 0;
+        }
+
         private void RenderBargraph(HmiElementDef elm, Rectangle rect)
         {
             // Bargraph background
@@ -403,40 +485,31 @@ namespace UnitronicsV350Simulator
             }
 
             // Read register value from PLC
-            int val = 0;
-            string opType = VlpParser.MapOperandTypeNumber(elm.VarOprndType);
-            if (opType == "MI" && elm.VarOprndAddr >= 0 && elm.VarOprndAddr < plc.MI.Length)
-            {
-                val = plc.MI[elm.VarOprndAddr];
-            }
-            else if (opType == "ML" && elm.VarOprndAddr >= 0 && elm.VarOprndAddr < plc.ML.Length)
-            {
-                val = plc.ML[elm.VarOprndAddr];
-            }
+            int val = GetDisplayNumericValue(elm);
 
             // Default range 0..100 (or 0..6 for stage indicators)
             int minVal = 0;
             int maxVal = 100;
-            if (elm.Text != null && elm.Text.Contains("STG")) maxVal = 6;
+            if (elm.Text != null && (elm.Text.Contains("STG") || elm.Text.Contains("GRZ"))) maxVal = 6;
             else if (elm.VarOprndAddr == 50) maxVal = 6;
 
             int clampedVal = Math.Max(minVal, Math.Min(val, maxVal));
             double ratio = (maxVal > minVal) ? ((double)(clampedVal - minVal) / (maxVal - minVal)) : 0;
             int barHeight = (int)((rect.Height - 4) * ratio);
 
-            // Select bar fill color based on tag category
+            // Select bar fill color based on tag category or operand address
             Color barColorTop, barColorBot;
-            if (elm.Text != null && (elm.Text.Contains("BAR_T") || elm.Text.Contains("TEMP")))
+            if (elm.VarOprndAddr == 0 || (elm.Text != null && (elm.Text.Contains("BAR_T") || elm.Text.Contains("TEMP"))))
             {
                 barColorTop = Color.FromArgb(255, 80, 50);
                 barColorBot = Color.FromArgb(200, 30, 20);
             }
-            else if (elm.Text != null && (elm.Text.Contains("BAR_RH") || elm.Text.Contains("HUM")))
+            else if (elm.VarOprndAddr == 1 || (elm.Text != null && (elm.Text.Contains("BAR_RH") || elm.Text.Contains("HUM"))))
             {
                 barColorTop = Color.FromArgb(0, 210, 255);
                 barColorBot = Color.FromArgb(0, 110, 200);
             }
-            else if (elm.Text != null && (elm.Text.Contains("VFD") || elm.Text.Contains("FAN")))
+            else if (elm.VarOprndAddr == 61 || elm.VarOprndAddr == 62 || (elm.Text != null && (elm.Text.Contains("VFD") || elm.Text.Contains("FAN"))))
             {
                 barColorTop = Color.FromArgb(0, 230, 118);
                 barColorBot = Color.FromArgb(0, 140, 70);
@@ -486,16 +559,7 @@ namespace UnitronicsV350Simulator
             }
 
             // Retrieve register value from PLC
-            int val = 0;
-            string opType = VlpParser.MapOperandTypeNumber(elm.VarOprndType);
-            if (opType == "MI" && elm.VarOprndAddr >= 0 && elm.VarOprndAddr < plc.MI.Length)
-            {
-                val = plc.MI[elm.VarOprndAddr];
-            }
-            else if (opType == "ML" && elm.VarOprndAddr >= 0 && elm.VarOprndAddr < plc.ML.Length)
-            {
-                val = plc.ML[elm.VarOprndAddr];
-            }
+            int val = GetDisplayNumericValue(elm);
 
             string displayStr = val.ToString();
 
@@ -608,9 +672,9 @@ namespace UnitronicsV350Simulator
 
         public static int GetTargetDisplayForButton(int touchAddr, string btnText)
         {
-            string txt = (btnText ?? "").Trim().ToUpper();
+            string txt = (btnText ?? "").Trim().ToUpperInvariant();
 
-            // 1. By TouchOprndAddr (MB 210..220 navigation bits)
+            // 1. By TouchOprndAddr (MB 210..220 navigation bits & MB 28 Historia Cykli)
             switch (touchAddr)
             {
                 case 210: return 1;  // Start-Up / Main Page
@@ -624,20 +688,63 @@ namespace UnitronicsV350Simulator
                 case 218: return 37; // Chart 1
                 case 219: return 38; // Chart 2
                 case 220: return 39; // Chart 3
+                case 28:  return 37; // Historia Cykli -> Wykres T / RH
             }
 
-            // 2. By button caption text
-            if (txt.Contains("MAIN") || txt.Contains("HOME") || txt.Contains("STARTUP") || txt.Contains("START-UP")) return 1;
-            if (txt.Contains("PROCESS") || txt.Contains("CONTROL")) return 36;
-            if (txt.Contains("RECIPE")) return 40;
-            if (txt.Contains("VENT") || txt.Contains("FAN")) return 41;
-            if (txt.Contains("ALARM")) return 42;
-            if (txt.Contains("ACCESS") || txt.Contains("LOGIN")) return 43;
-            if (txt.Contains("SERVICE >>")) return 44;
-            if (txt.Contains("TEST")) return 45;
-            if (txt.Contains("T / RH") || txt.Contains("T/RH")) return 37;
+            // 2. By button caption text (only when touchAddr is navigation or unassigned -1)
+            if (touchAddr < 0 || (touchAddr >= 210 && touchAddr <= 220))
+            {
+                if (txt.Contains("TEST") || txt.Contains("IO TEST")) return 45;
+                if (txt.Contains("MAIN") || txt.Contains("HOME") || txt.Contains("GLOWNY") || txt.Contains("STARTUP") || txt.Contains("START-UP")) return 1;
+                if (txt.Contains("PROCESS") || txt.Contains("PROCES") || txt.Contains("CONTROL")) return 36;
+                if (txt.Contains("RECIPE") || txt.Contains("RECEPT")) return 40;
+                if (txt.Contains("VENT") || txt.Contains("WENT") || txt.Contains("FAN")) return 41;
+                if (txt.Contains("ALARM")) return 42;
+                if (txt.Contains("ACCESS") || txt.Contains("DOSTEP") || txt.Contains("LOGIN")) return 43;
+                if (txt.Contains("SERVICE") || txt.Contains("SERWIS")) return 44;
+                if (txt.Contains("T / RH") || txt.Contains("T/RH") || txt.Contains("WYKRES T")) return 37;
+                if (txt.Contains("WYKRES GRZ") || txt.Contains("SEKCJI GRZ")) return 38;
+                if (txt.Contains("WYKRES WENT") || txt.Contains("VFD")) return 39;
+            }
 
             return 0;
+        }
+
+        private void PulseBit(int mbAddr, int durationMs = 150)
+        {
+            if (mbAddr < 0 || mbAddr >= plc.MB.Length) return;
+            plc.MB[mbAddr] = true;
+            System.Threading.ThreadPool.QueueUserWorkItem(_ =>
+            {
+                System.Threading.Thread.Sleep(durationMs);
+                plc.MB[mbAddr] = false;
+            });
+        }
+
+        private static bool IsEditableNumericAddr(int addr)
+        {
+            switch (addr)
+            {
+                case 20:
+                case 30:
+                case 31:
+                case 32:
+                case 34:
+                case 40:
+                case 43:
+                case 61:
+                case 62:
+                case 70:
+                case 71:
+                case 72:
+                case 73:
+                case 81:
+                case 82:
+                case 90:
+                    return true;
+                default:
+                    return false;
+            }
         }
 
         public void HandleTouchDown(int x, int y, int activePageId)
@@ -652,8 +759,9 @@ namespace UnitronicsV350Simulator
             if (!plc.Project.Pages.ContainsKey(activePageId)) return;
 
             var page = plc.Project.Pages[activePageId];
-            foreach (var elm in page.Elements)
+            for (int i = page.Elements.Count - 1; i >= 0; i--)
             {
+                var elm = page.Elements[i];
                 Rectangle rect = new Rectangle(elm.Xs, elm.Ys, Math.Max(elm.Dx, 10), Math.Max(elm.Dy, 10));
                 if (rect.Contains(x, y))
                 {
@@ -661,6 +769,7 @@ namespace UnitronicsV350Simulator
                     {
                         elm.IsPressed = true;
                         int touchAddr = elm.TouchOprndAddr;
+                        string btnTxt = (elm.Text ?? "").Trim().ToUpperInvariant();
 
                         // 1. Check screen navigation mapping
                         int targetPage = GetTargetDisplayForButton(touchAddr, elm.Text);
@@ -673,17 +782,159 @@ namespace UnitronicsV350Simulator
                         // 2. Update touch bit in PLC memory
                         if (touchAddr >= 0 && touchAddr < plc.MB.Length)
                         {
-                            // A. Toggle buttons on manual/service pages (MB 40, MB 70..104)
-                            if (touchAddr == 40 || (touchAddr >= 70 && touchAddr <= 104))
+                            // A0. Cycle history selector tabs on Pages 37, 38, 39 (BIEZACY=70, CYKL -1=71, CYKL -2=72, CYKL -3=73)
+                            if (btnTxt.Contains("BIEZACY") || btnTxt.Contains("CYKL -"))
+                            {
+                                plc.MI[72] = (short)(touchAddr == 70 ? 1 : -(touchAddr - 70));
+                                PulseBit(touchAddr, 150);
+                                plc.Log(string.Format("HMI Touch [Cycle History]: Selected cycle {0} ({1})", plc.MI[72], elm.Text));
+                            }
+                            // A. Toggle buttons on manual/service pages (MB 40, MB 70..79, or MB 90..104 on Page 41/45)
+                            else if (touchAddr == 40 || (touchAddr >= 70 && touchAddr <= 79) || ((activePageId == 41 || activePageId == 45) && touchAddr >= 90 && touchAddr <= 104))
                             {
                                 plc.MB[touchAddr] = !plc.MB[touchAddr];
+                                if (touchAddr == 40)
+                                {
+                                    if (plc.MB[40])
+                                    {
+                                        plc.MB[41] = true;
+                                        plc.MI[300] = 1999;
+                                        plc.CurrentAccessLevel = 2;
+                                        plc.MI[91] = 2;
+                                    }
+                                    else
+                                    {
+                                        PulseBit(42, 180); // HMI_Btn_Service_Exit
+                                    }
+                                }
+                                else if (!plc.MB[1])
+                                {
+                                    // Enable manual test mode automatically when clicking manual actuators on Page 41/45
+                                    plc.MB[40] = true;
+                                    plc.MB[41] = true;
+                                    plc.MI[300] = 1999;
+                                    plc.CurrentAccessLevel = 2;
+                                    plc.MI[91] = 2;
+                                }
                                 plc.Log(string.Format("HMI Touch [Toggle]: MB{0} = {1} ({2})", touchAddr, plc.MB[touchAddr] ? "ON" : "OFF", elm.Text));
+                            }
+                            else if (touchAddr == 23 || touchAddr == 30 || touchAddr == 31 || (activePageId != 45 && touchAddr == 104 && btnTxt.Contains("ALARM")))
+                            {
+                                // B. Alarm Acknowledge / Reset All (KASUJ ALARM MB 23 or MB 30/31)
+                                plc.MB[23] = true;
+                                PulseBit(23, 180);
+                                PulseBit(39, 180);
+                                plc.BuzzerSilenced = false;
+                                if (plc.I[0] && plc.I[3] && plc.I[11] && plc.I[37])
+                                {
+                                    plc.MB[30] = false;
+                                    for (int a = 31; a <= 37; a++) plc.MB[a] = false;
+                                    for (int a = 43; a <= 48; a++) plc.MB[a] = false;
+                                }
+                                plc.Log(string.Format("HMI Touch [Alarm Reset]: Pulsed MB23/MB39 ({0})", elm.Text));
+                            }
+                            else if (touchAddr == 41)
+                            {
+                                // C. WYCISZ SYGNALIZATOR (Silence Buzzer on Page 42)
+                                plc.BuzzerSilenced = true;
+                                plc.O[2] = false;
+                                PulseBit(41, 150);
+                                plc.Log("HMI Touch [Silence Buzzer]: Alarm horn/lamp silenced");
+                            }
+                            else if (touchAddr == 50 || touchAddr == 80 || touchAddr == 81)
+                            {
+                                // D. LOGIN buttons on Page 43 (ZALOGUJ TECH = 80, ZALOGUJ SERW = 81, LOGIN = 50)
+                                if (touchAddr == 80)
+                                {
+                                    plc.MI[90] = 1234;
+                                    plc.MI[300] = 1234;
+                                    plc.CurrentAccessLevel = 1;
+                                    plc.MI[91] = 1;
+                                    plc.MB[41] = true;
+                                }
+                                else if (touchAddr == 81)
+                                {
+                                    plc.MI[90] = 1999;
+                                    plc.MI[300] = 1999;
+                                    plc.CurrentAccessLevel = 2;
+                                    plc.MI[91] = 2;
+                                    plc.MB[41] = true;
+                                    plc.MB[42] = true;
+                                }
+                                else
+                                {
+                                    if (plc.MI[90] == 0) plc.MI[90] = 1999;
+                                    if (plc.MI[90] == 1999 || plc.MI[90] == 1234)
+                                    {
+                                        plc.MI[300] = 1999;
+                                        plc.MB[41] = true;
+                                        plc.CurrentAccessLevel = 2;
+                                        plc.MI[91] = 2;
+                                    }
+                                    else
+                                    {
+                                        plc.MI[300] = plc.MI[90];
+                                        plc.CurrentAccessLevel = 1;
+                                        plc.MI[91] = 1;
+                                    }
+                                }
+                                PulseBit(touchAddr, 150);
+                                plc.Log(string.Format("HMI Touch [Login]: PIN={0}, AccessLevel={1}", plc.MI[90], plc.CurrentAccessLevel));
+                            }
+                            else if (touchAddr == 51 || touchAddr == 82)
+                            {
+                                // E. LOGOUT button on Page 43 (WYLOGUJ / OP = 82 or LOGOUT = 51)
+                                plc.MI[90] = 0;
+                                plc.CurrentAccessLevel = 0;
+                                plc.MI[91] = 0;
+                                plc.MI[300] = 0;
+                                plc.MB[40] = false;
+                                plc.MB[41] = false;
+                                plc.MB[42] = false;
+                                PulseBit(42, 180); // HMI_Btn_Service_Exit
+                                PulseBit(touchAddr, 150);
+                                plc.Log("HMI Touch [Logout]: Service session closed");
                             }
                             else
                             {
-                                // B. Momentary pushbuttons
+                                // F. Momentary pushbuttons (START, PAUZA, STOP, NASTEPNY KROK, RECEPTURA +, ZAPISZ DO DT)
                                 plc.MB[touchAddr] = true;
                                 plc.Log(string.Format("HMI Touch [Pulse]: MB{0} = TRUE ({1})", touchAddr, elm.Text));
+
+                                if (touchAddr == 10 || touchAddr == 101 || btnTxt == "START")
+                                {
+                                    plc.MB[22] = true;
+                                    PulseBit(22, 180);      // START -> MB 22 & MB 101
+                                }
+                                else if (touchAddr == 11 || touchAddr == 102 || btnTxt == "STOP")
+                                {
+                                    plc.MB[20] = true;
+                                    PulseBit(20, 180);      // STOP -> MB 20 & MB 102
+                                }
+                                else if (touchAddr == 12 || touchAddr == 103 || btnTxt == "PAUZA" || btnTxt == "PAUSE")
+                                {
+                                    plc.MB[21] = true;
+                                    PulseBit(21, 180);      // PAUSE -> MB 21 & MB 103
+                                }
+                                else if (touchAddr == 25 && btnTxt.Contains("RECEPT"))
+                                {
+                                    // RECEPTURA + on Page 40
+                                    plc.MI[51] = (short)((plc.MI[51] % 10) + 1);
+                                    plc.MI[20] = plc.MI[51];
+                                    plc.MI[70] = plc.MI[51];
+                                }
+                                else if (touchAddr == 24 && btnTxt.Contains("KROK +"))
+                                {
+                                    // KROK + on Page 40
+                                    plc.MI[50] = (short)((plc.MI[50] + 1) % 6);
+                                    plc.MI[21] = plc.MI[50];
+                                }
+                                else if (touchAddr == 26 || (touchAddr == 21 && btnTxt.Contains("SAVE")))
+                                {
+                                    // ZAPISZ DO DT (MB 26) / SAVE RECIPE -> update active & DTI setpoints
+                                    if (plc.MI[31] > 0) { plc.MI[52] = (short)(plc.MI[31] * 10); plc.MI[201] = plc.MI[52]; }
+                                    if (plc.MI[32] > 0) { plc.MI[53] = (short)(plc.MI[32] * 10); plc.MI[202] = plc.MI[53]; }
+                                }
 
                                 // Guarantee a minimum 150 ms pulse so the PLC scan loop captures it
                                 int capturedAddr = touchAddr;
@@ -697,13 +948,15 @@ namespace UnitronicsV350Simulator
                                 });
                             }
                         }
+                        return;
                     }
-                    else if (elm.Type == 5 && elm.VarKeyPadEntry == 1)
+                    else if (elm.Type == 5 && (elm.VarKeyPadEntry == 1 || (elm.VarType == 8 && IsEditableNumericAddr(elm.VarOprndAddr))))
                     {
                         // Open numeric keypad overlay
                         IsKeypadOpen = true;
                         keypadTargetElement = elm;
                         keypadCurrentInput = "";
+                        return;
                     }
                 }
             }
@@ -721,12 +974,26 @@ namespace UnitronicsV350Simulator
                 {
                     elm.IsPressed = false;
                     int touchAddr = elm.TouchOprndAddr;
+                    string btnTxt = (elm.Text ?? "").Trim().ToUpperInvariant();
+                    bool isCycleTab = btnTxt.Contains("BIEZACY") || btnTxt.Contains("CYKL -");
+                    bool isManualToggle = touchAddr == 40 ||
+                                          (touchAddr >= 70 && touchAddr <= 79 && !isCycleTab) ||
+                                          ((activePageId == 41 || activePageId == 45) && touchAddr >= 90 && touchAddr <= 104);
                     if (touchAddr >= 0 && touchAddr < plc.MB.Length)
                     {
-                        // Do not reset toggle buttons on TouchUp
-                        if (touchAddr != 40 && !(touchAddr >= 70 && touchAddr <= 104))
+                        // Do not reset toggle buttons or alarm coils (MB 30/31) on TouchUp
+                        if (isCycleTab || (!isManualToggle && touchAddr != 30 && touchAddr != 31))
                         {
-                            plc.MB[touchAddr] = false;
+                            int capturedAddr = touchAddr;
+                            var capturedElm = elm;
+                            System.Threading.ThreadPool.QueueUserWorkItem(_ =>
+                            {
+                                System.Threading.Thread.Sleep(120);
+                                if (!capturedElm.IsPressed)
+                                {
+                                    plc.MB[capturedAddr] = false;
+                                }
+                            });
                         }
                     }
                 }
@@ -802,15 +1069,86 @@ namespace UnitronicsV350Simulator
             if (int.TryParse(keypadCurrentInput, out val))
             {
                 string opType = VlpParser.MapOperandTypeNumber(keypadTargetElement.VarOprndType);
-                if (opType == "MI" && keypadTargetElement.VarOprndAddr >= 0 && keypadTargetElement.VarOprndAddr < plc.MI.Length)
+                int addr = keypadTargetElement.VarOprndAddr;
+                if (opType == "MI" && addr >= 0 && addr < plc.MI.Length)
                 {
-                    plc.MI[keypadTargetElement.VarOprndAddr] = (short)val;
-                    plc.Log(string.Format("Updated register MI{0} to {1}", keypadTargetElement.VarOprndAddr, val));
+                    if (addr == 30) // SP_Min / SP_Czas (min) -> ML 50 & ML 200 (seconds), keep MI 30 = 950 STB limit
+                    {
+                        int durSec = Math.Max(60, val * 60);
+                        plc.ML[50] = durSec;
+                        plc.ML[200] = durSec;
+                        plc.MI[30] = 950;
+                    }
+                    else
+                    {
+                        plc.MI[addr] = (short)val;
+                    }
+
+                    // Synchronize HMI keypad setpoints with Ladder process registers
+                    if (addr == 31) // SP_T (C) -> MI 52 & MI 201 (0.1 C)
+                    {
+                        plc.MI[52] = (short)(val * 10);
+                        plc.MI[201] = (short)(val * 10);
+                    }
+                    else if (addr == 32) // SP_RH (%RH) -> MI 53 & MI 202 (0.1 %RH)
+                    {
+                        plc.MI[53] = (short)(val * 10);
+                        plc.MI[202] = (short)(val * 10);
+                    }
+                    else if (addr == 40) // Hist_T -> MI 54 & MI 203
+                    {
+                        plc.MI[54] = (short)val;
+                        plc.MI[203] = (short)val;
+                    }
+                    else if (addr == 43) // Wybieg (s) -> T3 preset (ms)
+                    {
+                        plc.T[3].PresetMs = Math.Max(1000, val * 1000);
+                    }
+                    else if (addr == 20 || addr == 70) // RCP_NO / Rec_Nr -> MI 51
+                    {
+                        plc.MI[51] = (short)Math.Max(1, val);
+                        plc.MI[20] = plc.MI[51];
+                    }
+                    else if (addr == 34 || addr == 61 || addr == 62) // Wyd_Went / VFD1 / VFD2 (%) -> MI 56, MI 57 & MI 120
+                    {
+                        short clampedPct = (short)Math.Max(0, Math.Min(100, val));
+                        plc.MI[56] = clampedPct;
+                        plc.MI[57] = clampedPct;
+                        plc.MI[120] = clampedPct;
+                        plc.MI[61] = clampedPct;
+                        plc.MI[62] = clampedPct;
+                    }
+                    else if (addr == 90 || addr == 81 || addr == 82) // USER_PIN / PIN_Tech / PIN_Serw -> MI 300
+                    {
+                        plc.MI[90] = (short)val;
+                        if (val == 1999)
+                        {
+                            plc.MI[300] = 1999;
+                            plc.MB[41] = true;
+                            plc.MB[42] = true;
+                            plc.CurrentAccessLevel = 2;
+                            plc.MI[91] = 2;
+                        }
+                        else if (val == 1234)
+                        {
+                            plc.MI[300] = 1234;
+                            plc.MB[41] = true;
+                            plc.CurrentAccessLevel = 1;
+                            plc.MI[91] = 1;
+                        }
+                        else
+                        {
+                            plc.MI[300] = (short)val;
+                            plc.CurrentAccessLevel = 0;
+                            plc.MI[91] = 0;
+                        }
+                    }
+                    plc.Log(string.Format("Updated register MI{0} to {1}", addr, val));
                 }
-                else if (opType == "ML" && keypadTargetElement.VarOprndAddr >= 0 && keypadTargetElement.VarOprndAddr < plc.ML.Length)
+                else if (opType == "ML" && addr >= 0 && addr < plc.ML.Length)
                 {
-                    plc.ML[keypadTargetElement.VarOprndAddr] = val;
-                    plc.Log(string.Format("Updated register ML{0} to {1}", keypadTargetElement.VarOprndAddr, val));
+                    plc.ML[addr] = val;
+                    plc.Log(string.Format("Updated register ML{0} to {1}", addr, val));
                 }
             }
         }
