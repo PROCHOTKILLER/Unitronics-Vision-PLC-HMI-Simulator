@@ -726,12 +726,44 @@ namespace UnitronicsV350Simulator
                     break;
                 }
 
+                case 0x05: // Read Data Tables Flash (UnCmDrv1.dll 0x041C90, UnPlcDB1.dll 0x0ED335 & 0x0EC817)
+                {
+                    // 46-byte (0x2E) initialized 0-tables Data Tables flash image verified against UnPlcDB1.clsDBServices
+                    byte[] dtFlashImage = new byte[]
+                    {
+                        // [0..15] 16-byte Data Tables flash topic header (totalSize = 46 = 0x2E at [4..7])
+                        0x00, 0x00, 0x00, 0x00, 0x2E, 0x00, 0x00, 0x00,
+                        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                        // [16..19] DesignCRC = 0xE38A6876
+                        0x76, 0x68, 0x8A, 0xE3,
+                        // [20..23] FlashCellsBlock.Length = 0
+                        0x00, 0x00, 0x00, 0x00,
+                        // [24..27] DesignBlock.Length = 18 (0x12)
+                        0x12, 0x00, 0x00, 0x00,
+                        // [28..45] 18-byte compressed 0-tables DesignBlock (UnPlcDB1.clsDBServices)
+                        0x00, 0x63, 0xE0, 0x62, 0x60, 0x60, 0x28, 0xCB,
+                        0xE8, 0x7A, 0xCC, 0xC0, 0x08, 0x00, 0x57, 0x02,
+                        0x0D, 0x0A
+                    };
+                    uint dtAddr = BitConverter.ToUInt32(details, 0);
+                    ushort dtLen = (ushort)(details[4] | (details[5] << 8));
+                    if (dtLen == 0) dtLen = 16;
+                    respPayload = new byte[dtLen];
+                    if (dtAddr < dtFlashImage.Length)
+                    {
+                        int copyLen = Math.Min((int)dtLen, dtFlashImage.Length - (int)dtAddr);
+                        Array.Copy(dtFlashImage, (int)dtAddr, respPayload, 0, copyLen);
+                    }
+                    plc.Log(string.Format("PCOM Binary: Read Data Tables flash (0x05, addr={0}, len={1})", dtAddr, dtLen));
+                    break;
+                }
+
                 default:
                 {
                     ushort defaultReadLen = (ushort)(details[4] | (details[5] << 8));
                     if (defaultReadLen > 0)
                     {
-                        int safeLen = Math.Max((int)defaultReadLen, 16);
+                        int safeLen = (int)defaultReadLen;
                         plc.Log(string.Format("PCOM Binary: Opcode 0x{0:X2} -> Returning {1} zero bytes (requested={2})",
                             opcode, safeLen, defaultReadLen));
                         respPayload = new byte[safeLen];
