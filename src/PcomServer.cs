@@ -523,10 +523,16 @@ namespace UnitronicsV350Simulator
                     break;
                 }
 
-                case 0x16: // Translate Index to Address
+                case 0x16: // Translate Index to Address (UnCmDrv1.dll 0x040736, UnVsCon2.dll 0x22BF40)
+                {
                     plc.Log("PCOM Binary: Translate OPLC memory index (0x16)");
-                    respPayload = new byte[8];
+                    respPayload = new byte[16];
+                    // Base address = 0x00100000, block size = 0x00010000
+                    respPayload[2] = 0x10;
+                    respPayload[6] = 0x01;
+                    respPayload[10] = 0x01;
                     break;
+                }
 
                 case 0x02: // Check Password
                     plc.Log("PCOM Binary: OPLC access password check (0x02) -> OK");
@@ -556,25 +562,81 @@ namespace UnitronicsV350Simulator
                     break;
                 }
 
-                case 0x10: // Where Resource
-                    plc.Log("PCOM Binary: Locate OPLC resource (0x10)");
-                    respPayload = new byte[8];
+                case 0x10: // Where Resource (UnCmDrv1.dll 0x0400E7, UnVsCon2.dll clsBackUpVlp 0x1F2BAA & 0x2278ED)
+                {
+                    // UnVsCon2.dll clsBackUpVlp.vt+0x9C (0x1F2BAA, Erl=9) and 0x2278ED (Erl=11) copy 3 int32 values
+                    // (12 bytes total: [0..3]=BaseAddress, [4..7]=TotalSize, [8..11]=SectorSize) from bRecievedData
+                    // and validate that the Flash resource region is non-zero and large enough for project backup/download.
+                    bool isSmallResource = (details[0] == 0x11 || details[2] == 0x11 || details[4] == 0x11);
+                    respPayload = new byte[16];
+                    // [0..3] BaseAddress = 0x00300000 (3 MB offset)
+                    respPayload[0] = 0x00;
+                    respPayload[1] = 0x00;
+                    respPayload[2] = 0x30;
+                    respPayload[3] = 0x00;
+                    // [4..7] TotalSize = 0x00010000 (64 KB) for resource 0x11, or 0x001DE000 (~1.9 MB) for main flash/backup
+                    if (isSmallResource)
+                    {
+                        respPayload[4] = 0x00;
+                        respPayload[5] = 0x00;
+                        respPayload[6] = 0x01;
+                        respPayload[7] = 0x00;
+                    }
+                    else
+                    {
+                        respPayload[4] = 0x00;
+                        respPayload[5] = 0xE0;
+                        respPayload[6] = 0x1D;
+                        respPayload[7] = 0x00;
+                    }
+                    // [8..11] SectorSize = 0x00010000 (64 KB)
+                    respPayload[8] = 0x00;
+                    respPayload[9] = 0x00;
+                    respPayload[10] = 0x01;
+                    respPayload[11] = 0x00;
+                    plc.Log(string.Format("PCOM Binary: Locate OPLC resource (0x10, details={0:X2}-{1:X2}-{2:X2}) -> Base=0x00300000, Sector=64KB",
+                        details[0], details[2], details[4]));
                     break;
+                }
 
-                case 0x01: // Read Memory
+                case 0x01: // Read Memory (UnCmDrv1.dll 0x041240)
                 {
                     ushort reqReadLen = (ushort)(details[4] | (details[5] << 8));
+                    if (reqReadLen == 0) reqReadLen = (ushort)(details[0] | (details[1] << 8));
                     if (reqReadLen == 0) reqReadLen = dataLen;
+                    if (reqReadLen == 0) reqReadLen = 256;
                     plc.Log(string.Format("PCOM Binary: Read OPLC memory (0x01, len={0})", reqReadLen));
                     respPayload = new byte[reqReadLen];
                     break;
                 }
 
-                case 0x4D: // Read Operand
+                case 0x4D: // Binary Mix Read/Write Operands (UnCmDrv1.dll 0x0358BB & clsBinaryMixHandler 0x044530)
                 {
-                    ushort reqReadLen = (ushort)(details[4] | (details[5] << 8));
-                    plc.Log("PCOM Binary: Read OPLC operand (0x4D)");
-                    respPayload = new byte[reqReadLen > 0 ? (int)reqReadLen : 4];
+                    // In opcode 0x4D requests, details[0..1] is groupCount (number of clsBinaryMixGroup blocks in payload),
+                    // while details[2..5] are 0x00. UnCmDrv1.dll clsBinaryMixGroup.vt+40 (0x045A1B) -> vt+52 (0x045E69)
+                    // indexes bRecievedData up to the total byte count of all requested operand reads (e.g. Timers/MIs/MBs).
+                    // Returning only 4 bytes causes VB6 Err 9 ("Subscript out of range") at UnVsCon2.dll 0x18DA74 (Erl=12).
+                    ushort groupCount = (ushort)(details[0] | (details[1] << 8));
+                    int estimatedReadBytes = 0;
+                    int payloadStart = offset + 24;
+                    int payloadEnd = payloadStart + dataLen;
+                    int pos = payloadStart;
+                    if (payloadEnd <= data.Length)
+                    {
+                        for (int g = 0; g < groupCount && pos + 6 <= payloadEnd; g++)
+                        {
+                            byte readCount = data[pos];
+                            byte writeCount = data[pos + 1];
+                            ushort extraLen = (ushort)(data[pos + 4] | (data[pos + 5] << 8));
+                            // Estimate up to 8 bytes per read item (Timers/Longs/Floats/Integers)
+                            estimatedReadBytes += (readCount > 0 ? readCount : 64) * 8;
+                            pos += 6 + extraLen + (readCount + writeCount) * 2;
+                        }
+                    }
+                    int replyLen = Math.Max(estimatedReadBytes + 64, 1024);
+                    plc.Log(string.Format("PCOM Binary: Read/Write OPLC operands (0x4D, groups={0}, reqDataLen={1}) -> returning {2} bytes",
+                        groupCount, dataLen, replyLen));
+                    respPayload = new byte[replyLen];
                     break;
                 }
 
