@@ -1079,7 +1079,7 @@ namespace UnitronicsV350Simulator
         {
             string projName = (plc.Project != null) ? plc.Project.ProjectName : Localization.T("Status_NoProgram");
             string hwFullName = config.Profile != null ? config.Profile.GetModelFullName() : "V350";
-            this.Text = string.Format(Localization.T("AppTitle"), "0.0.6", hwFullName + " - " + projName);
+            this.Text = string.Format(Localization.T("AppTitle"), "0.0.7", hwFullName + " - " + projName);
 
             // Menu: File
             mnuFile.Text = Localization.T("Menu_File");
@@ -1801,8 +1801,8 @@ namespace UnitronicsV350Simulator
         {
             string hwName = config.Profile != null ? config.Profile.GetModelFullName() : "V350";
             string msg =
-                "Unitronics Vision PLC/HMI Simulator v0.0.6 [Portable]\n\n" +
-                "Version: 0.0.6 Portable (Native Windows .NET 4.0 x86 Application)\n" +
+                "Unitronics Vision PLC/HMI Simulator v0.0.7 [Portable]\n\n" +
+                "Version: 0.0.7 Portable (Native Windows .NET 4.0 x86 Application)\n" +
                 "Active Hardware Profile: " + hwName + "\n" +
                 "Language: " + Localization.CurrentLanguage + "\n\n" +
                 "Key Features:\n" +

@@ -275,9 +275,10 @@ namespace UnitronicsV350Simulator
             else if (cmdBody.StartsWith("NMR"))
             {
                 // Read PLC Name in ASCII mode (UnVsCon2.dll 0x1E2A48..0x1E2CFF):
-                // Returning "ND" (Name Not Defined) causes UnVsCon2.dll (0x1E2CD4) to accept any configured PLC Name
-                plc.Log("PCOM ASCII NMR: Read PLC Name -> returning ND (accept any PLC Name)");
-                return FormatPcomAsciiResponse(unitId, "ND");
+                // UnVsCon2.dll extracts Mid$(sResp, 3, Len(sResp) - 4) and compares against "", "ND", or expected PLC Name.
+                string plcName = ResolveExpectedPlcName();
+                plc.Log("PCOM ASCII NMR: Read PLC Name -> returning '" + plcName + "'");
+                return FormatPcomAsciiResponse(unitId, "NM" + plcName);
             }
             else if (cmdBody.StartsWith("NMW"))
             {
@@ -534,25 +535,24 @@ namespace UnitronicsV350Simulator
                 case 0x0C: // Read PLC Name (UnCmDrv1.dll z_ReadPlcName 0x03EDDD, called by UnVsCon2.dll 0x1E289E)
                 {
                     // UnCmDrv1.dll VerifyBinaryResponse (0x04ED24) requires resp[12] == 0x8C (req[12] + 0x80).
-                    // UnCmDrv1.dll z_ReadPlcName (0x03EDDD) converts the 64-byte payload from ASCII to Unicode,
-                    // truncates at the first NUL byte (0x00), and returns outPlcName + bResult = True (-1).
-                    // UnVsCon2.dll (0x1E293C) compares outPlcName against the expected PLC Name configured in
-                    // VisiLogic's TCP/IP Call settings (stored in Current_OPLC.udb ProjectTable ID=86).
+                    // UnCmDrv1.dll z_ReadPlcName (0x03EDDD..0x03F048) converts the entire received byte array
+                    // using VB6 Trim(StrConv(bRecievedData, vbUnicode)) (rtcStrConvVar + rtcTrimVar).
+                    // Critically, VB6 StrConv(..., vbUnicode) converts ALL bytes in the array and does NOT stop
+                    // at NUL (0x00) bytes, while Trim() only strips spaces (0x20). Therefore, respPayload must
+                    // contain only the exact ASCII characters of the PLC Name (or space-padded, never 0x00-padded)
+                    // so that __vbaStrCmp in UnVsCon2.dll (0x1E2942) matches the expected PLC Name.
                     string plcName = ResolveExpectedPlcName();
-                    string modelName = (plc != null && plc.Profile != null && !string.IsNullOrEmpty(plc.Profile.SelectedModelName))
-                        ? plc.Profile.SelectedModelName
-                        : "V350-35-RA22";
-                    string family = modelName.Contains("-") ? modelName.Split('-')[0] : modelName;
+                    if (plcName != null)
+                    {
+                        plcName = plcName.Trim('\0', ' ', '\t', '\r', '\n');
+                    }
+                    if (string.IsNullOrEmpty(plcName))
+                    {
+                        plcName = "virtual";
+                    }
 
-                    plc.Log("PCOM Binary: Read PLC Name request (0x0C) -> returning '" + plcName + "'");
-                    respPayload = new byte[64];
-                    byte[] nameBytes = Encoding.ASCII.GetBytes(plcName);
-                    Array.Copy(nameBytes, 0, respPayload, 0, Math.Min(nameBytes.Length, 31));
-                    // Null-terminated at respPayload[nameBytes.Length] (already 0x00 in new byte[64])
-
-                    // Also populate model family at offset 44 for CheckEthPassword (0x03EEAD) compatibility
-                    byte[] famBytes = Encoding.ASCII.GetBytes(family.PadRight(6, ' '));
-                    Array.Copy(famBytes, 0, respPayload, 44, Math.Min(famBytes.Length, 6));
+                    plc.Log("PCOM Binary: Read PLC Name request (0x0C) -> returning '" + plcName + "' (" + plcName.Length + " bytes)");
+                    respPayload = Encoding.ASCII.GetBytes(plcName);
                     break;
                 }
 
