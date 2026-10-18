@@ -523,20 +523,58 @@ namespace UnitronicsV350Simulator
                     break;
                 }
 
-                case 0x16: // Translate Index to Address (UnCmDrv1.dll 0x040736, UnVsCon2.dll 0x22BF40)
+                case 0x16: // Translate Index to Address (UnCmDrv1.dll 0x040736, UnVsCon2.dll 0x16F383 / 0x1EB423 / 0x204F96)
                 {
-                    plc.Log("PCOM Binary: Translate OPLC memory index (0x16)");
+                    // UnVsCon2.dll 0x16F383 (called by prvGetDataOfTopic for Topic 4 "Info Tables"),
+                    // 0x1EB423, and 0x204F96 read two little-endian uint32 values from bRecievedData:
+                    //   - [2..5] = uint32 FlashAddress (0x00100000)
+                    //   - [6..9] = uint32 TopicByteLength (0x00000040 = 64 bytes)
+                    // Then 0x16F383 reads TopicByteLength bytes via Opcode 0x01 and 0x16F29F indexes
+                    // len = arr[5], arr[len - 2], arr[len - 1].
+                    byte topicIdx = data[offset + 13];
+                    if (topicIdx == 0) topicIdx = details[0];
+                    plc.Log(string.Format("PCOM Binary: Translate OPLC memory index (0x16, topic={0}) -> Addr=0x00100000, Len=64", topicIdx));
                     respPayload = new byte[16];
-                    // Base address = 0x00100000, block size = 0x00010000
-                    respPayload[2] = 0x10;
-                    respPayload[6] = 0x01;
-                    respPayload[10] = 0x01;
+                    respPayload[0] = 0x01; // valid entry flag
+                    // [2..5] FlashAddress = 0x00100000 (uint32 LE: 00 00 10 00)
+                    respPayload[2] = 0x00;
+                    respPayload[3] = 0x00;
+                    respPayload[4] = 0x10;
+                    respPayload[5] = 0x00;
+                    // [6..9] TopicByteLength = 0x00000040 (64 bytes, uint32 LE: 40 00 00 00)
+                    respPayload[6] = 0x40;
+                    respPayload[7] = 0x00;
+                    respPayload[8] = 0x00;
+                    respPayload[9] = 0x00;
                     break;
                 }
 
                 case 0x02: // Check Password
                     plc.Log("PCOM Binary: OPLC access password check (0x02) -> OK");
                     break;
+
+                case 0x03: // Read ISC Table in PLC (UnVsCon2.dll clsDownloadSequence.prvGetISCInPLC 0x23E23B)
+                {
+                    ushort iscLen = (ushort)(details[4] | (details[5] << 8));
+                    if (iscLen < 16) iscLen = 16;
+                    plc.Log(string.Format("PCOM Binary: Read ISC table (0x03, len={0})", iscLen));
+                    respPayload = new byte[iscLen];
+                    break;
+                }
+
+                case 0x07: // Read PLC Status Block (UnVsCon2.dll 0x239EFA / 0x23ADD9 / 0x23B08B -> parsed by 0x1E01B4)
+                {
+                    // UnVsCon2.dll requests 106 bytes (details[4..5] = 0x006A) and 0x1E01B4 indexes up to resp[93].
+                    // 0x23ADA0 requires resp[3] == 0 (no active flash error).
+                    // 0x23B052 requires resp[0] == 'S' (0x53, Stop/Ready mode for download).
+                    ushort statusLen = (ushort)(details[4] | (details[5] << 8));
+                    if (statusLen < 106) statusLen = 106;
+                    plc.Log(string.Format("PCOM Binary: Read OPLC status block (0x07, len={0}) -> Mode='S'", statusLen));
+                    respPayload = new byte[statusLen];
+                    respPayload[0] = (byte)'S'; // 0x53 = Stopped / Ready for download
+                    respPayload[3] = 0x00;      // 0x00 = Status OK
+                    break;
+                }
 
                 case 0x0C: // Read PLC Name (UnCmDrv1.dll z_ReadPlcName 0x03EDDD, called by UnVsCon2.dll 0x1E289E)
                 {
@@ -562,12 +600,14 @@ namespace UnitronicsV350Simulator
                     break;
                 }
 
-                case 0x10: // Where Resource (UnCmDrv1.dll 0x0400E7, UnVsCon2.dll clsBackUpVlp 0x1F2BAA & 0x2278ED)
+                case 0x10: // Where Resource (UnCmDrv1.dll 0x0400E7, UnVsCon2.dll clsBackUpVlp 0x1F2BAA & 0x2278ED & 0x227B9C)
                 {
-                    // UnVsCon2.dll clsBackUpVlp.vt+0x9C (0x1F2BAA, Erl=9) and 0x2278ED (Erl=11) copy 3 int32 values
-                    // (12 bytes total: [0..3]=BaseAddress, [4..7]=TotalSize, [8..11]=SectorSize) from bRecievedData
-                    // and validate that the Flash resource region is non-zero and large enough for project backup/download.
-                    bool isSmallResource = (details[0] == 0x11 || details[2] == 0x11 || details[4] == 0x11);
+                    // UnCmDrv1.dll BuildBinaryCommand (0x04CE6E) places the resource ID in header byte 13 (data[offset + 13]).
+                    // UnVsCon2.dll copies 3 int32 values ([0..3]=BaseAddress, [4..7]=TotalSize, [8..11]=SectorSize)
+                    // from bRecievedData.
+                    byte resType = data[offset + 13];
+                    if (resType == 0) resType = details[0];
+                    bool isSmallResource = (resType == 0x11 || details[0] == 0x11 || details[2] == 0x11 || details[4] == 0x11);
                     respPayload = new byte[16];
                     // [0..3] BaseAddress = 0x00300000 (3 MB offset)
                     respPayload[0] = 0x00;
@@ -594,12 +634,45 @@ namespace UnitronicsV350Simulator
                     respPayload[9] = 0x00;
                     respPayload[10] = 0x01;
                     respPayload[11] = 0x00;
-                    plc.Log(string.Format("PCOM Binary: Locate OPLC resource (0x10, details={0:X2}-{1:X2}-{2:X2}) -> Base=0x00300000, Sector=64KB",
-                        details[0], details[2], details[4]));
+                    plc.Log(string.Format("PCOM Binary: Locate OPLC resource (0x10, resType=0x{0:X2}, details={1:X2}-{2:X2}-{3:X2}) -> Base=0x00300000, Sector=64KB",
+                        resType, details[0], details[2], details[4]));
                     break;
                 }
 
-                case 0x01: // Read Memory (UnCmDrv1.dll 0x041240)
+                case 0x18: // Get Download Signature / Flash State (UnVsCon2.dll 0x1F3ACD / 0x2292DB / 0x2329C8 / 0x24EA5D)
+                {
+                    // 0x24EA5D indexes resp[0] and uint32 at resp[6..9].
+                    plc.Log("PCOM Binary: Read OPLC download signature/state (0x18)");
+                    respPayload = new byte[16];
+                    break;
+                }
+
+                case 0x1E: // Get HMI / Font Flash Region (UnVsCon2.dll 0x178BFE & 0x17CC36)
+                {
+                    // Reads uint32 BaseAddress at [2..5] (0x0010F000) and uint32 Size at [6..9] (0x0017C000).
+                    plc.Log("PCOM Binary: Get HMI/Font Flash region (0x1E) -> Base=0x0010F000, Size=0x0017C000");
+                    respPayload = new byte[16];
+                    respPayload[0] = 0x01;
+                    respPayload[2] = 0x00;
+                    respPayload[3] = 0xF0;
+                    respPayload[4] = 0x10;
+                    respPayload[5] = 0x00;
+                    respPayload[6] = 0x00;
+                    respPayload[7] = 0xC0;
+                    respPayload[8] = 0x17;
+                    respPayload[9] = 0x00;
+                    break;
+                }
+
+                case 0x20: // Get Extended Flash / Download Status (UnVsCon2.dll 0x22896C & 0x232C9E)
+                {
+                    // Indexes resp[0] and uint32 at resp[8..11].
+                    plc.Log("PCOM Binary: Get extended flash status (0x20)");
+                    respPayload = new byte[16];
+                    break;
+                }
+
+                case 0x01: // Read Memory (UnCmDrv1.dll 0x041240, UnVsCon2.dll 0x16F383 Info Tables / 0x1EF805 / 0x227D3D)
                 {
                     ushort reqReadLen = (ushort)(details[4] | (details[5] << 8));
                     if (reqReadLen == 0) reqReadLen = (ushort)(details[0] | (details[1] << 8));
@@ -607,6 +680,19 @@ namespace UnitronicsV350Simulator
                     if (reqReadLen == 0) reqReadLen = 256;
                     plc.Log(string.Format("PCOM Binary: Read OPLC memory (0x01, len={0})", reqReadLen));
                     respPayload = new byte[reqReadLen];
+                    if (respPayload.Length >= 16)
+                    {
+                        // Populate valid Vision Info Table header so UnVsCon2.dll 0x16F29F (len = arr[5],
+                        // arr[len - 2], arr[len - 1]) and 0x16EA39 succeed without subscript or zero-seed errors.
+                        respPayload[0] = (byte)'C';
+                        respPayload[1] = (byte)'I';
+                        respPayload[2] = 6;
+                        respPayload[3] = 10;
+                        respPayload[4] = 14;
+                        respPayload[5] = 16;          // total Info Table header length = 16 bytes
+                        respPayload[14] = (byte)'*';  // arr[16 - 2] non-zero seed byte 1
+                        respPayload[15] = (byte)'*';  // arr[16 - 1] non-zero seed byte 2
+                    }
                     break;
                 }
 
@@ -641,8 +727,28 @@ namespace UnitronicsV350Simulator
                 }
 
                 default:
-                    plc.Log(string.Format("PCOM Binary: Opcode 0x{0:X2} -> Returning ACK success", opcode));
+                {
+                    ushort defaultReadLen = (ushort)(details[4] | (details[5] << 8));
+                    if (defaultReadLen > 0)
+                    {
+                        int safeLen = Math.Max((int)defaultReadLen, 16);
+                        plc.Log(string.Format("PCOM Binary: Opcode 0x{0:X2} -> Returning {1} zero bytes (requested={2})",
+                            opcode, safeLen, defaultReadLen));
+                        respPayload = new byte[safeLen];
+                    }
+                    else if (opcode == 0x09 || opcode == 0x0A || opcode == 0x0B || opcode == 0x0D ||
+                             opcode == 0x13 || opcode == 0x42 || opcode == 0x4A || opcode == 0x4C ||
+                             opcode == 0x50 || opcode == 0x55 || opcode == 0x58)
+                    {
+                        plc.Log(string.Format("PCOM Binary: Query Opcode 0x{0:X2} -> Returning 32 zero bytes", opcode));
+                        respPayload = new byte[32];
+                    }
+                    else
+                    {
+                        plc.Log(string.Format("PCOM Binary: Opcode 0x{0:X2} -> Returning ACK success", opcode));
+                    }
                     break;
+                }
             }
 
             return BuildBinaryResponse(data, offset, opcode, respPayload, details);
