@@ -247,6 +247,10 @@ namespace UnitronicsV350Simulator
                 if (inputIdx < plc.I.Length && plc.I[inputIdx] != chk.Checked)
                 {
                     plc.I[inputIdx] = chk.Checked;
+                    if (plc.SimProfile != null && plc.SimProfile.InputRules != null && plc.SimProfile.InputRules.ContainsKey(inputIdx))
+                    {
+                        plc.SimProfile.InputRules[inputIdx].ForcedState = chk.Checked;
+                    }
                 }
                 UpdateLedColor(led, chk.Checked, Color.FromArgb(0, 230, 118));
             };
@@ -443,10 +447,22 @@ namespace UnitronicsV350Simulator
             {
                 int aiIdx = i;
                 int miRegister = 100 + aiIdx;
+                string unitStr = "raw";
+                string aiDesc = GetDefaultAiName(aiIdx);
+
+                if (plc.SimProfile != null && plc.SimProfile.AnalogRules != null && plc.SimProfile.AnalogRules.ContainsKey(aiIdx))
+                {
+                    var aRule = plc.SimProfile.AnalogRules[aiIdx];
+                    if (aRule != null)
+                    {
+                        miRegister = aRule.TargetMiAddress;
+                        if (!string.IsNullOrEmpty(aRule.Unit)) unitStr = aRule.Unit;
+                    }
+                }
 
                 var lblTitle = new Label
                 {
-                    Text = string.Format("AI{0} / MI{1} [{2}]", aiIdx, miRegister, GetDefaultAiName(aiIdx)),
+                    Text = string.Format("AI{0} / MI{1} [{2}]", aiIdx, miRegister, aiDesc),
                     Left = 20,
                     Top = yPos,
                     Width = 400,
@@ -455,9 +471,9 @@ namespace UnitronicsV350Simulator
                 };
                 lblAnalogLabels[aiIdx] = lblTitle;
 
-                int initVal = (miRegister < plc.MI.Length && plc.MI[miRegister] > 0 && plc.MI[miRegister] <= 4095)
-                    ? plc.MI[miRegister]
-                    : ((aiIdx == 0) ? 220 : (aiIdx == 1 ? 450 : 0));
+                int initVal = (miRegister >= 0 && miRegister < plc.MI.Length)
+                    ? Math.Max(0, Math.Min(4095, (int)plc.MI[miRegister]))
+                    : 0;
 
                 var track = new TrackBar
                 {
@@ -490,30 +506,44 @@ namespace UnitronicsV350Simulator
                 {
                     Left = 440,
                     Top = yPos + 26,
-                    Width = 160,
+                    Width = 180,
                     ForeColor = Color.FromArgb(200, 220, 240)
                 };
 
                 Action<bool> updateAi = (writePlc) =>
                 {
+                    int curMiReg = miRegister;
+                    string curUnit = unitStr;
+                    if (plc.SimProfile != null && plc.SimProfile.AnalogRules != null && plc.SimProfile.AnalogRules.ContainsKey(aiIdx))
+                    {
+                        var r = plc.SimProfile.AnalogRules[aiIdx];
+                        if (r != null)
+                        {
+                            curMiReg = r.TargetMiAddress;
+                            if (!string.IsNullOrEmpty(r.Unit)) curUnit = r.Unit;
+                        }
+                    }
+
                     short rawVal = (short)num.Value;
-                    if (writePlc && miRegister < plc.MI.Length) plc.MI[miRegister] = rawVal;
-                    if (aiIdx == 0)
-                        lblVal.Text = string.Format("{0:F1} °C  (MI{1}={2})", rawVal / 10.0, miRegister, rawVal);
-                    else if (aiIdx == 1)
-                        lblVal.Text = string.Format("{0:F1} %RH  (MI{1}={2})", rawVal / 10.0, miRegister, rawVal);
-                    else
-                        lblVal.Text = string.Format("Raw: {0}", rawVal);
+                    if (writePlc && curMiReg >= 0 && curMiReg < plc.MI.Length)
+                    {
+                        plc.MI[curMiReg] = rawVal;
+                        if (plc.SimProfile != null && plc.SimProfile.AnalogRules != null && plc.SimProfile.AnalogRules.ContainsKey(aiIdx))
+                        {
+                            plc.SimProfile.AnalogRules[aiIdx].CurrentPreciseValue = rawVal;
+                        }
+                    }
+                    lblVal.Text = string.Format("MI{0} = {1} ({2})", curMiReg, rawVal, curUnit);
                 };
 
                 track.ValueChanged += (s, e) =>
                 {
-                    num.Value = track.Value;
+                    if (num.Value != track.Value) num.Value = track.Value;
                     updateAi(true);
                 };
                 num.ValueChanged += (s, e) =>
                 {
-                    if (num.Value <= track.Maximum) track.Value = (int)num.Value;
+                    if (num.Value <= track.Maximum && track.Value != (int)num.Value) track.Value = (int)num.Value;
                     updateAi(true);
                 };
 
@@ -601,6 +631,26 @@ namespace UnitronicsV350Simulator
                         }
                     }
 
+                    // Sync analog input sliders if modified by process simulation or Watch Table
+                    int totalAi = profile.GetTotalAi();
+                    for (int i = 0; i < totalAi && i < numAnalogs.Length; i++)
+                    {
+                        int miReg = 100 + i;
+                        if (plc.SimProfile != null && plc.SimProfile.AnalogRules != null && plc.SimProfile.AnalogRules.ContainsKey(i))
+                        {
+                            var r = plc.SimProfile.AnalogRules[i];
+                            if (r != null) miReg = r.TargetMiAddress;
+                        }
+                        if (numAnalogs[i] != null && miReg >= 0 && miReg < plc.MI.Length)
+                        {
+                            int clampedVal = Math.Max(0, Math.Min(4095, (int)plc.MI[miReg]));
+                            if ((int)numAnalogs[i].Value != clampedVal && !numAnalogs[i].Focused && (trackAnalogs[i] == null || !trackAnalogs[i].Focused))
+                            {
+                                numAnalogs[i].Value = clampedVal;
+                            }
+                        }
+                    }
+
                     // Update analog output gauges
                     int totalAo = profile.GetTotalAo();
                     for (int i = 0; i < totalAo && i < barAoVoltages.Length; i++)
@@ -673,18 +723,28 @@ namespace UnitronicsV350Simulator
             for (int i = 0; i < totalAi && i < lblAnalogLabels.Length; i++)
             {
                 int miReg = 100 + i;
+                string desc = null;
+                if (plc.SimProfile != null && plc.SimProfile.AnalogRules != null && plc.SimProfile.AnalogRules.ContainsKey(i))
+                {
+                    var r = plc.SimProfile.AnalogRules[i];
+                    if (r != null)
+                    {
+                        miReg = r.TargetMiAddress;
+                    }
+                }
                 if (lblAnalogLabels[i] != null)
                 {
-                    string desc;
-                    if (plc.Project.OperandDescriptions.TryGetValue("MI" + miReg, out desc) ||
-                        plc.Project.OperandDescriptions.TryGetValue("AN" + i, out desc))
+                    if (!plc.Project.OperandDescriptions.TryGetValue("MI" + miReg, out desc))
+                        plc.Project.OperandDescriptions.TryGetValue("AN" + i, out desc);
+                    if (!string.IsNullOrEmpty(desc))
                     {
                         lblAnalogLabels[i].Text = string.Format("AI{0} / MI{1} [{2}]", i, miReg, desc);
                     }
                 }
-                if (numAnalogs[i] != null && miReg < plc.MI.Length && plc.MI[miReg] >= 0 && plc.MI[miReg] <= 4095)
+                if (numAnalogs[i] != null && miReg >= 0 && miReg < plc.MI.Length)
                 {
-                    numAnalogs[i].Value = plc.MI[miReg];
+                    int clampedVal = Math.Max(0, Math.Min(4095, (int)plc.MI[miReg]));
+                    numAnalogs[i].Value = clampedVal;
                 }
             }
         }

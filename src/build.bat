@@ -2,11 +2,11 @@
 chcp 65001 > nul
 echo ==============================================================================
 echo  Compilation and Versioning: Unitronics Vision PLC/HMI Simulator [virtualplc.exe]
-echo  Target Version: v0.0.6
+echo  Target Version: v0.0.15
 echo ==============================================================================
 echo.
 
-set VERSION=0.0.6
+set VERSION=0.0.15
 set CSC="C:\Windows\Microsoft.NET\Framework\v4.0.30319\csc.exe"
 set OUT_EXE="..\virtualplc.exe"
 
@@ -24,7 +24,7 @@ echo [2/3] Terminating any running instance of virtualplc.exe...
 taskkill /f /im virtualplc.exe >nul 2>&1
 
 echo Compiling C# source files (v%VERSION%) to %OUT_EXE%...
-%CSC% /nologo /platform:x86 /codepage:65001 /target:winexe /main:UnitronicsV350Simulator.Program /r:System.Drawing.dll,System.Windows.Forms.dll,System.Data.dll,System.IO.Compression.FileSystem.dll /out:%OUT_EXE% *.cs
+%CSC% /nologo /platform:x86 /codepage:65001 /target:winexe /main:UnitronicsV350Simulator.Program /r:System.Drawing.dll,System.Windows.Forms.dll,System.Data.dll,System.IO.Compression.dll,System.IO.Compression.FileSystem.dll /out:%OUT_EXE% *.cs
 
 if %ERRORLEVEL% EQU 0 (
     echo.

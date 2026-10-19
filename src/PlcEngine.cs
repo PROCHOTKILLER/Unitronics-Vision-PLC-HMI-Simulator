@@ -146,9 +146,6 @@ namespace UnitronicsV350Simulator
         private int accumMs1s = 0;
         private int accumMs100ms = 0;
         private bool isFirstScan = true;
-        private short prev_MI301 = 1;
-        private double simTempDeciC = 220.0;
-        private double simRhDeciPct = 450.0;
         public short CurrentAccessLevel = 0;
         public bool BuzzerSilenced = false;
 
@@ -157,11 +154,14 @@ namespace UnitronicsV350Simulator
 
         public HardwareProfile Profile { get; set; }
         public PlcMemoryStorage Memory { get; private set; }
+        public ProjectSimulationProfile SimProfile { get; set; }
 
         public PlcEngine(HardwareProfile profile = null)
         {
             Profile = profile ?? (SimulatorConfig.Current != null && SimulatorConfig.Current.Profile != null ? SimulatorConfig.Current.Profile : HardwareProfile.CreateDefaultProfile());
             Memory = new PlcMemoryStorage();
+            SimProfile = new ProjectSimulationProfile();
+            SimProfile.ResetToNeutral(Profile, null);
             ResetMemory();
         }
 
@@ -174,20 +174,9 @@ namespace UnitronicsV350Simulator
             }
         }
 
-        private bool IsKomora9Project()
-        {
-            if (Project == null) return false;
-            if (Project.ProjectName != null && Project.ProjectName.IndexOf("Komora", StringComparison.OrdinalIgnoreCase) >= 0)
-                return true;
-            if (Project.Pages != null && Project.Pages.ContainsKey(36) && Project.Pages.ContainsKey(40))
-                return true;
-            if (Project.OperandDescriptions != null && Project.OperandDescriptions.ContainsKey("MB22") && Project.OperandDescriptions.ContainsKey("MI100"))
-                return true;
-            return false;
-        }
-
         public void ResetMemory()
         {
+            // 1. Always clear all physical I/O and internal memory to 100% neutral position (0 / false)
             Array.Clear(I, 0, I.Length);
             Array.Clear(O, 0, O.Length);
             Array.Clear(MB, 0, MB.Length);
@@ -212,7 +201,7 @@ namespace UnitronicsV350Simulator
                 C[i] = new CounterState();
             }
 
-            // Apply timer presets and power-up values from loaded project if available
+            // 2. Apply timer presets and power-up values defined directly in the loaded project file
             if (Project != null)
             {
                 if (Project.TimerPresets != null)
@@ -245,97 +234,19 @@ namespace UnitronicsV350Simulator
                             SI[addr] = (short)val;
                     }
                 }
-
-                // Automatically set Normally-Closed (_NC) digital inputs to TRUE (closed circuit in healthy state)
-                if (Project.OperandDescriptions != null)
-                {
-                    foreach (var kvp in Project.OperandDescriptions)
-                    {
-                        int inAddr;
-                        if (kvp.Key.StartsWith("I") && int.TryParse(kvp.Key.Substring(1), out inAddr) && inAddr >= 0 && inAddr < I.Length)
-                        {
-                            if (kvp.Value != null && kvp.Value.EndsWith("_NC", StringComparison.OrdinalIgnoreCase))
-                            {
-                                I[inAddr] = true;
-                            }
-                        }
-                    }
-                }
-
-                if (IsKomora9Project())
-                {
-                    // Healthy NC safety circuit inputs for Komora 9
-                    I[0] = true;  // Przycisk_STOP_NC
-                    I[3] = true;  // Przekaznik_Bezpieczenstwa (checked via NC contact 201[I3] in 06_SAFETY_ALARMS Rung 2)
-                    I[4] = true;  // Otwarcie_Drzwi_Komory_NC
-                    for (int idx = 5; idx <= 11; idx++) I[idx] = true; // Termik_Wentylator_1..6_NC & Termostat_Grzalek_NC
-                    I[32] = true; // Presostaty_Rekuperatora_NC
-                    I[33] = true; // Gotowosc_VFD_1_NC
-                    I[34] = true; // Gotowosc_VFD_2_NC
-                    I[37] = true; // Przekaznik_Poprawne_Zasilanie_NC
-
-                    // Default timer presets when not stored in UDB
-                    if (T[0].PresetMs <= 0) T[0].PresetMs = 1000;  // 1.0s recipe clock
-                    if (T[1].PresetMs <= 0) T[1].PresetMs = 2000;  // 2.0s fan 1 feedback
-                    if (T[2].PresetMs <= 0) T[2].PresetMs = 2000;  // 2.0s fan 2 feedback
-                    if (T[3].PresetMs <= 0) T[3].PresetMs = 5000;  // 5.0s cooling run-out
-                    if (T[4].PresetMs <= 0) T[4].PresetMs = 5000;
-                    if (T[5].PresetMs <= 0) T[5].PresetMs = 5000;
-                    if (T[6].PresetMs <= 0) T[6].PresetMs = 3000;  // 3.0s damper feedback
-
-                    // Default ambient analog inputs (22.0 °C, 45.0 %RH, 2000 m3/h airflow)
-                    simTempDeciC = 220.0;
-                    simRhDeciPct = 450.0;
-                    MI[1] = 220;   // Analog_Temp_Pt100 (22.0 °C)
-                    MI[2] = 2293;  // Analog_Wilg (4-20mA raw for 45.0 %RH: 819 + 0.45 * 3276 = 2293)
-                    MI[3] = 2130;  // Analog_Przeplyw_Pow (~2000 m3/h)
-                    MI[4] = 200;   // Analog_Temp_Zewn (20.0 °C)
-                    MI[5] = 220;   // Analog_Temp_Nawiew
-                    MI[6] = 220;   // Analog_Temp_Wywiew
-                    MI[7] = 210;   // Analog_Temp_Rekup
-
-                    // Default DTI Recipe Row buffer & active step parameters (80.0 °C, 30.0 %RH, 60 min, Mode 2 = Heating+Drying)
-                    ML[200] = 3600; // DTI_Row_Czas_s (60 min)
-                    MI[201] = 800;  // DTI_Row_Temp_Zad (80.0 °C)
-                    MI[202] = 300;  // DTI_Row_Wilg_Zad (30.0 %RH)
-                    MI[203] = 10;   // DTI_Row_Delta_T (1.0 °C)
-                    MI[204] = 2;    // DTI_Row_Tryb (2 = Grzanie + Suszenie)
-
-                    ML[50] = 3600;  // Step_Duration_s (3600 s = 60 min)
-                    ML[51] = 0;     // Step_Elapsed_s (0..3600 s; incremented by 03_RECIPES StripId=1018)
-                    MI[51] = 1;     // Nr_Aktywnej_Receptury
-                    MI[52] = 800;   // Step_Target_Temp (80.0 °C)
-                    MI[53] = 300;   // Step_Target_RH (30.0 %RH)
-                    MI[54] = 10;    // Step_Max_Delta_T
-                    MI[55] = 2;     // Step_Mode (2 = Heating + Drying)
-                    MI[56] = 65;    // Step_Vent_Power (65%)
-                    MI[57] = 65;    // Step_Drying_Vent_Power (65%)
-                    MI[59] = 1;     // Step_Circ_Fans_En (1 = Enabled)
-                    MI[103] = 20;   // Hist_Wilg_Rekup (2.0 %RH hysteresis)
-
-                    // HMI & safety registers
-                    MI[20] = 1;     // RCP_NO
-                    MI[21] = 0;     // STEP
-                    MI[23] = 60;    // MIN (Remaining minutes)
-                    MI[30] = 950;   // Lim_Temp_STB_Max (95.0 °C in 06_SAFETY_ALARMS StripId=1055)
-                    MI[31] = 80;    // SP_T (80 °C)
-                    MI[32] = 30;    // SP_RH (30 %RH)
-                    MI[40] = 10;    // Hist_T (1.0 °C)
-                    MI[43] = 5;     // Wybieg (5 s)
-                    MI[70] = 25;    // PID_KP
-                    MI[71] = 120;   // PID_TI
-                    MI[72] = 1;     // NrCykl / PID_TD
-                    MI[73] = 105;   // MAX_T (105 °C)
-                    MI[81] = 1234;  // PIN_Tech (Page 43)
-                    MI[82] = 1999;  // PIN_Serw (Page 43)
-                    CurrentAccessLevel = 0;
-                    BuzzerSilenced = false;
-
-                    Array.Copy(I, prev_I, I.Length);
-                }
             }
 
-            // Default Unitronics Vision OS system operand values:
+            // 3. Only apply artificial input states & initial analog values if user explicitly enabled simulation
+            if (SimProfile != null && SimProfile.IsSimulationEnabled)
+            {
+                ApplySimulationInitialStates();
+            }
+
+            CurrentAccessLevel = 0;
+            BuzzerSilenced = false;
+            Array.Copy(I, prev_I, I.Length);
+
+            // 4. Default Unitronics Vision OS system operand values:
             // SB 0 = Always 0, SB 1 = Always 1, SB 2 = Power-Up bit (1 for first scan),
             // SB 3 = 1s pulse, SB 7 = 100ms pulse, SB 8 = Battery OK
             SB[0] = false;
@@ -344,7 +255,6 @@ namespace UnitronicsV350Simulator
             SB[7] = true;
             SB[8] = true;
             SI[9] = 1;      // Default HMI page (Start-Up Display ID = 1)
-            prev_MI301 = 1;
             ScanCount = 0;
             isFirstScan = true;
             accumMs1s = 0;
@@ -359,6 +269,51 @@ namespace UnitronicsV350Simulator
                     Memory.SaveProjectToRom(Project, Profile);
                 }
                 Memory.SyncRamFromEngine(this, true);
+            }
+        }
+
+        public void ApplySimulationInitialStates()
+        {
+            if (SimProfile == null || !SimProfile.IsSimulationEnabled) return;
+
+            if (SimProfile.InputRules != null)
+            {
+                foreach (var kvp in SimProfile.InputRules)
+                {
+                    DigitalInputRule rule = kvp.Value;
+                    if (rule == null || rule.Address < 0 || rule.Address >= I.Length) continue;
+                    rule.RuntimeTimerMs = 0;
+                    rule.RuntimeInitialized = true;
+                    if (rule.Role == DigitalInputRole.Forced_Constant)
+                    {
+                        I[rule.Address] = rule.ForcedState;
+                    }
+                    else if (rule.Role == DigitalInputRole.Output_Feedback)
+                    {
+                        int outIdx = rule.LinkedOutputAddress;
+                        bool outState = (outIdx >= 0 && outIdx < O.Length) && O[outIdx];
+                        I[rule.Address] = rule.InvertFeedback ? !outState : outState;
+                    }
+                    else
+                    {
+                        I[rule.Address] = rule.ForcedState;
+                    }
+                }
+            }
+
+            if (SimProfile.AnalogRules != null)
+            {
+                foreach (var kvp in SimProfile.AnalogRules)
+                {
+                    AnalogInputRule aRule = kvp.Value;
+                    if (aRule == null) continue;
+                    aRule.CurrentPreciseValue = (aRule.Role == AnalogInputRole.Neutral_Zero) ? 0.0 : (double)aRule.InitialValue;
+                    aRule.RuntimeInitialized = true;
+                    if (aRule.TargetMiAddress >= 0 && aRule.TargetMiAddress < MI.Length)
+                    {
+                        MI[aRule.TargetMiAddress] = (short)Math.Round(aRule.CurrentPreciseValue);
+                    }
+                }
             }
         }
 
@@ -410,14 +365,12 @@ namespace UnitronicsV350Simulator
                 return;
             }
 
-            bool pulse1sEdge = false;
             accumMs1s += elapsedMs;
             accumMs100ms += elapsedMs;
             // Update Unitronics Vision system clock bits: SB 3 (1s pulse) and SB 7 (100ms pulse)
             if (clock1s.ElapsedMilliseconds >= 500 || accumMs1s >= 500)
             {
                 SB[3] = !SB[3];
-                if (SB[3]) pulse1sEdge = true;
                 clock1s.Restart();
                 accumMs1s = 0;
             }
@@ -452,15 +405,13 @@ namespace UnitronicsV350Simulator
                 }
             }
 
-            int prevML51 = ML[51];
-
             // 2. Execute loaded ladder program
             ExecuteLadderProgram();
 
-            // 3. Synchronize Komora 9 physical plant feedback, PID output, and HMI display registers
-            if (IsKomora9Project())
+            // 3. Execute universal user-configured I/O & process simulation rules (only when enabled)
+            if (SimProfile != null && SimProfile.IsSimulationEnabled)
             {
-                UpdateKomora9Simulation(elapsedMs, pulse1sEdge, prevML51);
+                UpdateUniversalIoSimulation(elapsedMs);
             }
 
             // 4. Clear First Scan flag after the first scan cycle completes
@@ -474,7 +425,7 @@ namespace UnitronicsV350Simulator
             for (int ao = 0; ao < AO_Volts.Length; ao++)
             {
                 int val280 = (280 + ao < MI.Length) ? MI[280 + ao] : 0;
-                int val110 = (!IsKomora9Project() && 110 + ao < MI.Length) ? MI[110 + ao] : 0;
+                int val110 = (110 + ao < MI.Length) ? MI[110 + ao] : 0;
                 int rawDac = (val280 != 0) ? val280 : val110;
                 AO_Volts[ao] = Math.Max(0.0, Math.Min(10.0, (rawDac / 4095.0) * 10.0));
             }
@@ -500,241 +451,130 @@ namespace UnitronicsV350Simulator
             }
         }
 
-        private void UpdateKomora9Simulation(int elapsedMs, bool pulse1sEdge, int prevML51)
+        private void UpdateUniversalIoSimulation(int elapsedMs)
         {
-            // A. Contactor auxiliary feedback contacts & damper limit switch (O12 -> I12)
-            // In Komora_9_PLC.vlp (Subroutine 30 StripId 1053), I35/I36 monitor heater contactor O33 weld status (!O33 && I35 -> T6);
-            // in English Komora9_VisiLogic.vlp (Subroutine 7), I35/I36 are fan contactor feedbacks for O3/O4.
-            if (Project != null && Project.Subroutines != null && Project.Subroutines.ContainsKey(30))
-            {
-                I[35] = O[33];
-                I[36] = O[33] && O[34];
-            }
-            else
-            {
-                I[35] = O[3];
-                I[36] = O[4];
-            }
-            I[12] = O[12];
+            if (SimProfile == null || !SimProfile.IsSimulationEnabled) return;
 
-            // B. Ensure recipe parameters and STB safety limit (MI 30 = 950 -> 95.0 °C) are populated
-            if (MI[30] < 850) MI[30] = 950;
-            if (ML[200] <= 0) ML[200] = 3600;
-            if (MI[201] <= 0) MI[201] = 800;
-            if (MI[202] <= 0) MI[202] = 300;
-            if (MI[203] <= 0) MI[203] = 10;
-            if (MI[204] <= 0) MI[204] = 2;
-            if (ML[50] <= 0) ML[50] = ML[200];
-            if (MI[52] <= 0) MI[52] = MI[201];
-            if (MI[53] <= 0) MI[53] = MI[202];
-            if (MI[54] <= 0 || (MI[54] >= 1 && MI[54] <= 6)) MI[54] = 10;
-            if (MI[55] < 1 || MI[55] > 2) MI[55] = 2;
-            if (MI[59] <= 0) MI[59] = 1;
-            if (MI[56] <= 0) MI[56] = 65;
-            MI[57] = MI[56]; // Keep Mode 2 drying fan power synced with MI 56
-
-            // Track ventilation cascade completion (MB 10) and stop/cooldown transition (MB 3)
-            MB[10] = O[3] && O[4] && O[5];
-            if (!MB[1] && prev_MB[1] && !MB[30])
+            // A. Digital Input Rules (Forced_Constant, Output_Feedback, Pulse_Oscillator)
+            if (SimProfile.InputRules != null)
             {
-                MB[3] = true;
-            }
-            if (!MB[1])
-            {
-                MB[11] = false;
-                MB[12] = false;
-            }
-
-            // C. 1-second recipe step elapsed counter (ML 51) if not already incremented by ladder StripId=1018
-            if (MB[1] && !MB[2])
-            {
-                if (pulse1sEdge && ML[51] == prevML51)
+                foreach (var kvp in SimProfile.InputRules)
                 {
-                    ML[51]++;
-                    ML[52]++;
-                }
-                if (ML[50] > 0 && ML[51] >= ML[50])
-                {
-                    MB[61] = true; // Step time elapsed -> advance step
-                }
-            }
+                    DigitalInputRule rule = kvp.Value;
+                    if (rule == null || rule.Address < 0 || rule.Address >= I.Length) continue;
 
-            // D. Proportional heating controller & heater stage shedding when Heat_Permitted (MB 62) is active
-            int errDeciC = MI[52] - MI[100]; // Error in 0.1 °C
-            if (MB[62])
-            {
-                MI[110] = (short)errDeciC;
-                int heatPct = (errDeciC <= 0) ? 0 : Math.Min(100, Math.Max(10, errDeciC));
-                MI[60] = (short)heatPct;
-
-                // Keep stage 1 (O33) continuously ON when error >= 1.0 °C; shed stages O34..O38 as error decreases
-                if (errDeciC >= 10) O[33] = true;
-                if (errDeciC < 20) O[34] = false;
-                if (errDeciC < 38) O[35] = false;
-                if (errDeciC < 55) O[36] = false;
-                if (errDeciC < 72) O[37] = false;
-                if (errDeciC < 90) O[38] = false;
-                if (errDeciC <= 0) O[33] = false;
-            }
-            else
-            {
-                MI[60] = 0;
-            }
-
-            // E. Manual / Service mode actuator mapping for HMI Page 45 (MB 90..104 or English MB 70..81) when process is stopped
-            if (!MB[1] && !MB[30])
-            {
-                bool anyMan90 = false;
-                for (int m = 90; m <= 104; m++)
-                {
-                    if (MB[m]) { anyMan90 = true; break; }
-                }
-
-                if (anyMan90)
-                {
-                    O[3] = MB[90] || MB[91];
-                    O[4] = MB[92] || MB[93];
-                    O[5] = MB[94] || MB[95];
-                    O[6] = MB[102];
-                    O[7] = MB[103];
-                    bool anyHeater96 = false;
-                    for (int s = 0; s < 6; s++)
+                    if (rule.Role == DigitalInputRole.Forced_Constant)
                     {
-                        O[33 + s] = MB[96 + s];
-                        if (MB[96 + s]) anyHeater96 = true;
+                        I[rule.Address] = rule.ForcedState;
                     }
-                    O[32] = MB[104] || anyHeater96;
-                }
-                else if (MB[40] && (Project == null || Project.Subroutines == null || !Project.Subroutines.ContainsKey(30)))
-                {
-                    for (int f = 0; f < 6; f++)
+                    else if (rule.Role == DigitalInputRole.Output_Feedback)
                     {
-                        O[3 + f] = MB[70 + f];
-                    }
-                    bool anyHeaterMan = false;
-                    for (int s = 0; s < 6; s++)
-                    {
-                        if (MB[76 + s])
+                        int outIdx = rule.LinkedOutputAddress;
+                        if (outIdx >= 0 && outIdx < O.Length)
                         {
-                            O[33 + s] = true;
-                            anyHeaterMan = true;
+                            bool outActive = O[outIdx];
+                            bool targetState = rule.InvertFeedback ? !outActive : outActive;
+                            if (I[rule.Address] != targetState)
+                            {
+                                rule.RuntimeTimerMs += elapsedMs;
+                                if (rule.RuntimeTimerMs >= Math.Max(0, rule.DelayMs))
+                                {
+                                    I[rule.Address] = targetState;
+                                    rule.RuntimeTimerMs = 0;
+                                }
+                            }
+                            else
+                            {
+                                rule.RuntimeTimerMs = 0;
+                            }
                         }
                     }
-                    if (anyHeaterMan || MB[74]) O[32] = true;
+                    else if (rule.Role == DigitalInputRole.Pulse_Oscillator)
+                    {
+                        int halfPeriodMs = Math.Max(25, rule.DelayMs);
+                        rule.RuntimeTimerMs += elapsedMs;
+                        if (rule.RuntimeTimerMs >= halfPeriodMs)
+                        {
+                            I[rule.Address] = !I[rule.Address];
+                            rule.RuntimeTimerMs = 0;
+                        }
+                    }
                 }
             }
 
-            // F. Mirror heater section outputs O33..O38 to O9..O14 (for HMI Page 38 & Page 45 indicators)
-            //    and drive signal tower lamps O0 (RUN), O1 (PAUSE), O2 (ALARM) & main 400V contactor O8
-            int activeHeaterStages = 0;
-            for (int s = 0; s < 6; s++)
-            {
-                O[9 + s] = O[33 + s];
-                if (O[33 + s]) activeHeaterStages++;
-            }
-            O[0] = MB[1] && !MB[2];
-            O[1] = MB[2];
-            O[2] = MB[30] && !BuzzerSilenced;
-            O[8] = O[32];
-
-            // G. Thermal & humidity chamber physics simulation (while respecting manual slider/watch overrides)
-            if (Math.Abs(MI[1] - (int)Math.Round(simTempDeciC)) > 10)
-            {
-                simTempDeciC = MI[1];
-            }
-            int expectedRawRh = (int)Math.Round(819.0 + (simRhDeciPct / 1000.0) * (4095.0 - 819.0));
-            if (Math.Abs(MI[2] - expectedRawRh) > 25)
-            {
-                simRhDeciPct = Math.Max(0.0, Math.Min(1000.0, ((MI[2] - 819.0) * 1000.0) / (4095.0 - 819.0)));
-            }
-
+            // B. Analog Input / Process Simulation Rules
             double dtSec = Math.Max(0.01, elapsedMs / 1000.0);
-            if (O[32] && activeHeaterStages > 0)
+            if (SimProfile.AnalogRules != null)
             {
-                // Heating rate proportional to active heater stages (~2.5 deci-°C/stage/s) capped softly near target unless manual override
-                double nextTemp = simTempDeciC + (activeHeaterStages * 2.5) * dtSec;
-                if (MB[1] && MI[52] > 0 && simTempDeciC < MI[52] && nextTemp > MI[52])
+                foreach (var kvp in SimProfile.AnalogRules)
                 {
-                    nextTemp = MI[52];
-                }
-                simTempDeciC = nextTemp;
-            }
-            else
-            {
-                // Natural cooling toward 22.0 °C ambient (faster when fans O3..O7 or recuperator O11 are running)
-                double coolFactor = (O[3] || O[11]) ? 1.5 : 0.4;
-                if (simTempDeciC > 220.0)
-                {
-                    simTempDeciC = Math.Max(220.0, simTempDeciC - coolFactor * dtSec);
-                }
-            }
+                    AnalogInputRule aRule = kvp.Value;
+                    if (aRule == null) continue;
+                    int miAddr = aRule.TargetMiAddress;
+                    if (miAddr < 0 || miAddr >= MI.Length) continue;
 
-            if (O[11] || (O[32] && activeHeaterStages > 0))
-            {
-                // Drying / recuperation reduces chamber humidity toward target RH (or 25% floor)
-                double targetRh = Math.Max(250.0, (double)MI[53]);
-                if (simRhDeciPct > targetRh)
-                {
-                    double dryRate = (O[11] ? 3.0 : 1.2);
-                    simRhDeciPct = Math.Max(targetRh, simRhDeciPct - dryRate * dtSec);
-                }
-            }
-            else if (simRhDeciPct < 450.0)
-            {
-                simRhDeciPct = Math.Min(450.0, simRhDeciPct + 0.3 * dtSec);
-            }
+                    if (!aRule.RuntimeInitialized)
+                    {
+                        aRule.CurrentPreciseValue = (aRule.Role == AnalogInputRole.Neutral_Zero) ? 0.0 : (double)aRule.InitialValue;
+                        aRule.RuntimeInitialized = true;
+                        MI[miAddr] = (short)Math.Round(aRule.CurrentPreciseValue);
+                    }
 
-            MI[1] = (short)Math.Round(simTempDeciC);
-            MI[100] = MI[1];
-            MI[2] = (short)Math.Round(819.0 + (simRhDeciPct / 1000.0) * (4095.0 - 819.0));
-            MI[101] = (short)Math.Round(simRhDeciPct);
+                    if (aRule.Role == AnalogInputRole.Forced_Constant)
+                    {
+                        aRule.CurrentPreciseValue = aRule.InitialValue;
+                        MI[miAddr] = aRule.InitialValue;
+                        continue;
+                    }
 
-            // H. Sync VFD analog outputs (MI 120 % -> MI 61/62 & AO0/AO1 MI 280/281 0..4095)
-            short vfdPct = (O[3] || O[6] || O[7] || MB[1]) ? (MI[120] > 0 ? MI[120] : MI[56]) : (short)0;
-            MI[120] = vfdPct;
-            MI[61] = vfdPct;
-            MI[62] = vfdPct;
-            short vfdDac = (short)Math.Max(0, Math.Min(4095, (vfdPct * 4095) / 100));
-            MI[280] = vfdDac;
-            MI[281] = vfdDac;
-            MI[3] = (short)(vfdPct * 32); // Airflow in m3/h (e.g. 65% -> 2080 m3/h)
+                    if (aRule.Role == AnalogInputRole.Process_Temperature ||
+                        aRule.Role == AnalogInputRole.Process_Humidity ||
+                        aRule.Role == AnalogInputRole.Process_Generic)
+                    {
+                        // Respect manual changes made via HardwarePanel slider or Watch Table
+                        if (Math.Abs(MI[miAddr] - (int)Math.Round(aRule.CurrentPreciseValue)) > 5)
+                        {
+                            aRule.CurrentPreciseValue = MI[miAddr];
+                        }
 
-            // I. Sync HMI display variables (MI 0 = Temp °C, MI 20 = Recipe, MI 21 = Step, MI 23 / ML 33 = Remaining min, MI 31/32 = SP)
-            MI[0] = (short)(MI[100] / 10);
-            MI[20] = MI[51];
-            MI[21] = (short)(MB[1] ? (MI[50] + 1) : MI[50]);
-            int remSec = Math.Max(0, ML[50] - ML[51]);
-            MI[23] = (short)((remSec + 59) / 60);
-            ML[33] = MI[23];
-            MI[31] = (short)(MI[52] / 10);
-            MI[32] = (short)(MI[53] / 10);
-            MI[91] = CurrentAccessLevel;
+                        var incOuts = aRule.GetIncreasingOutputs();
+                        var decOuts = aRule.GetDecreasingOutputs();
 
-            // J. Sync HMI Page 42 Alarm status indicators (O15..O18 and MI 80 active alarm count / access level)
-            if (!MB[30]) BuzzerSilenced = false;
-            O[15] = MB[30] || MB[31];
-            O[16] = MB[32] || MB[45];
-            O[17] = MB[33] || MB[34] || MB[35];
-            O[18] = MB[36] || MB[37] || MB[46] || MB[47] || MB[48];
+                        int activeIncCount = 0;
+                        foreach (int oAddr in incOuts)
+                        {
+                            if (oAddr >= 0 && oAddr < O.Length && O[oAddr]) activeIncCount++;
+                        }
 
-            short almCount = 0;
-            for (int a = 31; a <= 37; a++) if (MB[a]) almCount++;
-            for (int a = 45; a <= 48; a++) if (MB[a]) almCount++;
-            if (MB[30] && almCount == 0) almCount = 1;
-            MI[80] = (almCount > 0) ? almCount : CurrentAccessLevel;
+                        int activeDecCount = 0;
+                        foreach (int oAddr in decOuts)
+                        {
+                            if (oAddr >= 0 && oAddr < O.Length && O[oAddr]) activeDecCount++;
+                        }
 
-            // K. Handle F1..F4 screen navigation via MI 301 changes in 08_HMI_LOGIC
-            if (MI[301] != prev_MI301)
-            {
-                prev_MI301 = MI[301];
-                switch (MI[301])
-                {
-                    case 1: SI[9] = 1; break;
-                    case 2: SI[9] = 36; break;
-                    case 3: SI[9] = 40; break;
-                    case 4: SI[9] = 41; break;
-                    case 5: SI[9] = 42; break;
-                    case 6: SI[9] = 45; break;
+                        double deltaPerSec = 0.0;
+                        if (activeIncCount > 0) deltaPerSec += aRule.IncreaseRatePerSec * activeIncCount;
+                        if (activeDecCount > 0) deltaPerSec -= aRule.DecreaseRatePerSec * activeDecCount;
+
+                        if (Math.Abs(deltaPerSec) > 0.0001)
+                        {
+                            aRule.CurrentPreciseValue += deltaPerSec * dtSec;
+                        }
+                        else if (aRule.AmbientDriftRatePerSec > 0.0)
+                        {
+                            if (aRule.CurrentPreciseValue > aRule.AmbientValue)
+                            {
+                                aRule.CurrentPreciseValue = Math.Max((double)aRule.AmbientValue, aRule.CurrentPreciseValue - aRule.AmbientDriftRatePerSec * dtSec);
+                            }
+                            else if (aRule.CurrentPreciseValue < aRule.AmbientValue)
+                            {
+                                aRule.CurrentPreciseValue = Math.Min((double)aRule.AmbientValue, aRule.CurrentPreciseValue + aRule.AmbientDriftRatePerSec * dtSec);
+                            }
+                        }
+
+                        aRule.CurrentPreciseValue = Math.Max((double)aRule.MinValue, Math.Min((double)aRule.MaxValue, aRule.CurrentPreciseValue));
+                        MI[miAddr] = (short)Math.Round(aRule.CurrentPreciseValue);
+                    }
                 }
             }
         }

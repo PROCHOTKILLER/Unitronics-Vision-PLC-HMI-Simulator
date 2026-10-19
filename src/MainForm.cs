@@ -43,6 +43,7 @@ namespace UnitronicsV350Simulator
         private ToolStripMenuItem mnuRun;
         private ToolStripMenuItem mnuStop;
         private ToolStripMenuItem mnuReset;
+        private ToolStripMenuItem mnuSimSetup;
 
         private ToolStripMenuItem mnuHardware;
         private ToolStripMenuItem mnuHardwareConfig;
@@ -84,6 +85,7 @@ namespace UnitronicsV350Simulator
         private ToolStripButton btnToolbarRun;
         private ToolStripButton btnToolbarStop;
         private ToolStripButton btnToolbarReset;
+        private ToolStripButton btnToolbarSimSetup;
         private ToolStripButton btnToolbarHw;
         private ToolStripButton btnToolbarSettings;
 
@@ -151,8 +153,7 @@ namespace UnitronicsV350Simulator
                 {
                     this.BeginInvoke(new Action(() =>
                     {
-                        LoadProjectFile(projPath);
-                        plc.Start();
+                        LoadProjectFile(projPath, true);
                     }));
                 }
                 catch { }
@@ -183,8 +184,8 @@ namespace UnitronicsV350Simulator
             string savedProjPath = (plc.Memory != null) ? plc.Memory.GetPersistedProjectPath() : null;
             if (!string.IsNullOrEmpty(savedProjPath) && File.Exists(savedProjPath))
             {
-                plc.Log("Restoring persisted project from rom.bin: " + savedProjPath);
-                LoadProjectFile(savedProjPath);
+                plc.Log("Restoring persisted project from rom.bin in neutral state: " + savedProjPath);
+                LoadProjectFile(savedProjPath, false);
             }
             else
             {
@@ -201,6 +202,7 @@ namespace UnitronicsV350Simulator
             this.BackColor = Color.FromArgb(24, 28, 36);
             this.ForeColor = Color.White;
             this.Font = new Font("Segoe UI", 9f, FontStyle.Regular);
+            this.KeyPreview = true;
 
             // ==========================================
             // MAIN MENU BAR (MenuStrip)
@@ -224,7 +226,8 @@ namespace UnitronicsV350Simulator
             mnuRun = new ToolStripMenuItem("START / RUN (F5)", null, (s, e) => StartPlc());
             mnuStop = new ToolStripMenuItem("STOP (F6)", null, (s, e) => StopPlc());
             mnuReset = new ToolStripMenuItem("RESET (F7)", null, (s, e) => ResetPlc());
-            mnuPlc.DropDownItems.AddRange(new ToolStripItem[] { mnuRun, mnuStop, mnuReset });
+            mnuSimSetup = new ToolStripMenuItem("I/O & Process Simulation Setup (F8)...", null, (s, e) => OpenSimulationSetupDialog(false));
+            mnuPlc.DropDownItems.AddRange(new ToolStripItem[] { mnuRun, mnuStop, mnuReset, new ToolStripSeparator(), mnuSimSetup });
 
             // 3. Menu: Hardware
             mnuHardware = new ToolStripMenuItem("Hardware");
@@ -376,6 +379,14 @@ namespace UnitronicsV350Simulator
             };
             btnToolbarReset.Click += (s, e) => ResetPlc();
 
+            btnToolbarSimSetup = new ToolStripButton("  🧪 SYMULACJA I/O  ")
+            {
+                BackColor = Color.FromArgb(0, 137, 123),
+                ForeColor = Color.White,
+                Font = new Font("Segoe UI", 9f, FontStyle.Bold)
+            };
+            btnToolbarSimSetup.Click += (s, e) => OpenSimulationSetupDialog(false);
+
             btnToolbarHw = new ToolStripButton("  ⚙ HARDWARE  ")
             {
                 BackColor = Color.FromArgb(70, 80, 100),
@@ -400,6 +411,7 @@ namespace UnitronicsV350Simulator
                 btnToolbarStop,
                 btnToolbarReset,
                 new ToolStripSeparator(),
+                btnToolbarSimSetup,
                 btnToolbarHw,
                 btnToolbarSettings
             });
@@ -1092,9 +1104,10 @@ namespace UnitronicsV350Simulator
 
         public void ApplyLanguage()
         {
+            bool pl = (Localization.CurrentLanguage == AppLanguage.Polish);
             string projName = (plc.Project != null) ? plc.Project.ProjectName : Localization.T("Status_NoProgram");
             string hwFullName = config.Profile != null ? config.Profile.GetModelFullName() : "V350";
-            this.Text = string.Format(Localization.T("AppTitle"), "0.0.13", hwFullName + " - " + projName);
+            this.Text = string.Format(Localization.T("AppTitle"), "0.0.15", hwFullName + " - " + projName);
 
             // Menu: File
             mnuFile.Text = Localization.T("Menu_File");
@@ -1107,6 +1120,12 @@ namespace UnitronicsV350Simulator
             mnuRun.Text = Localization.T("Menu_Start");
             mnuStop.Text = Localization.T("Menu_Stop");
             mnuReset.Text = Localization.T("Menu_Reset");
+            if (mnuSimSetup != null)
+            {
+                mnuSimSetup.Text = pl
+                    ? "Konfigurator Symulacji Wejść/Wyjść i Procesu (F8)..."
+                    : "I/O & Process Simulation Setup (F8)...";
+            }
 
             // Menu: Hardware
             mnuHardware.Text = Localization.T("Menu_Hardware");
@@ -1154,6 +1173,10 @@ namespace UnitronicsV350Simulator
             btnToolbarRun.Text = "  ▶ " + Localization.T("Menu_Start") + "  ";
             btnToolbarStop.Text = "  ⏹ " + Localization.T("Menu_Stop") + "  ";
             btnToolbarReset.Text = "  🔄 " + Localization.T("Menu_Reset") + "  ";
+            if (btnToolbarSimSetup != null)
+            {
+                btnToolbarSimSetup.Text = pl ? "  🧪 SYMULACJA I/O (F8)  " : "  🧪 SIMULATE I/O (F8)  ";
+            }
             btnToolbarHw.Text = "  ⚙ " + Localization.T("Menu_Hardware") + "  ";
             btnToolbarSettings.Text = "  🔧 " + Localization.T("Menu_Settings") + "  ";
 
@@ -1302,7 +1325,7 @@ namespace UnitronicsV350Simulator
         // ==========================================
         // PROJECT LOADING & RESET HANDLERS
         // ==========================================
-        public void LoadProjectFile(string filePath)
+        public void LoadProjectFile(string filePath, bool promptSimulationWizard = true)
         {
             try
             {
@@ -1323,6 +1346,11 @@ namespace UnitronicsV350Simulator
                     }
                 }
 
+                // Always start in 100% neutral unconfigured position immediately after loading/downloading
+                if (plc.SimProfile != null)
+                {
+                    plc.SimProfile.ResetToNeutral(plc.Profile, proj);
+                }
                 plc.ResetMemory();
 
                 hardwarePanel.RebuildLayout(plc.Profile);
@@ -1332,15 +1360,121 @@ namespace UnitronicsV350Simulator
 
                 ApplyLanguage();
 
-                // Start ladder execution after loading
+                int activePage = (plc.SI[9] > 0) ? plc.SI[9] : 1;
+                picScreen.Image = hmiRenderer.RenderScreen(activePage);
+                picScreen.Refresh();
+
+                plc.Log("Project loaded in NEUTRAL state (all inputs I=0, outputs O=0, analog AI=0).");
+
+                // Ask user whether this project should be simulated, which inputs should be artificially set,
+                // what role each input/output plays, and how they should behave
+                if (promptSimulationWizard && this.IsHandleCreated)
+                {
+                    OpenSimulationSetupDialog(true);
+                }
+
+                // Start ladder execution after loading / wizard configuration
                 plc.Start();
-                plc.Log("Project loaded successfully. Ladder execution started (RUN).");
+                plc.Log("Project ready. Ladder execution started (RUN).");
             }
             catch (Exception ex)
             {
                 MessageBox.Show("Failed to load project:\n" + ex.Message, "VisiLogic Project Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 plc.Log("PROJECT LOAD ERROR: " + ex.Message);
             }
+        }
+
+        public void OpenSimulationSetupDialog(bool isPostLoadPrompt = false)
+        {
+            if (plc.SimProfile == null)
+            {
+                plc.SimProfile = new ProjectSimulationProfile();
+                plc.SimProfile.ResetToNeutral(plc.Profile, plc.Project);
+            }
+
+            bool wasRunning = (plc.State == PlcRunState.RUN);
+            if (isPostLoadPrompt)
+            {
+                plc.Stop();
+            }
+
+            using (var dlg = new SimulationSetupDialog(plc.Project, plc.Profile, plc.SimProfile, isPostLoadPrompt))
+            {
+                dlg.ShowDialog(this);
+            }
+
+            if (isPostLoadPrompt)
+            {
+                // Apply neutral reset first, then apply any user-chosen artificial inputs
+                plc.ResetMemory();
+            }
+            else
+            {
+                if (!plc.SimProfile.IsSimulationEnabled)
+                {
+                    // User switched back to neutral mode: clear all forced inputs
+                    Array.Clear(plc.I, 0, plc.I.Length);
+                    if (plc.SimProfile.AnalogRules != null)
+                    {
+                        foreach (var kvp in plc.SimProfile.AnalogRules)
+                        {
+                            var ar = kvp.Value;
+                            if (ar != null && ar.TargetMiAddress >= 0 && ar.TargetMiAddress < plc.MI.Length)
+                                plc.MI[ar.TargetMiAddress] = 0;
+                        }
+                    }
+                }
+                else
+                {
+                    plc.ApplySimulationInitialStates();
+                }
+            }
+
+            hardwarePanel.RebuildLayout(plc.Profile);
+            RefreshWatchTableValues();
+
+            int activePage = (plc.SI[9] > 0) ? plc.SI[9] : 1;
+            picScreen.Image = hmiRenderer.RenderScreen(activePage);
+            picScreen.Refresh();
+
+            if (plc.SimProfile.IsSimulationEnabled)
+            {
+                plc.Log("I/O & Process Simulation ENABLED by user (artificial inputs and I/O behavioral rules active).");
+            }
+            else
+            {
+                plc.Log("Controller set to NEUTRAL mode (all inputs I=0, no artificial simulation rules).");
+            }
+
+            if (wasRunning && !isPostLoadPrompt)
+            {
+                plc.Start();
+            }
+        }
+
+        protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
+        {
+            if (keyData == Keys.F5)
+            {
+                StartPlc();
+                return true;
+            }
+            if (keyData == Keys.F6)
+            {
+                StopPlc();
+                return true;
+            }
+            if (keyData == Keys.F7)
+            {
+                ResetPlc();
+                return true;
+            }
+            if (keyData == Keys.F8)
+            {
+                OpenSimulationSetupDialog(false);
+                return true;
+            }
+            return base.ProcessCmdKey(ref msg, keyData);
         }
 
         private void OpenProjectDialog()
@@ -1351,7 +1485,7 @@ namespace UnitronicsV350Simulator
                 ofd.Filter = "VisiLogic Projects (*.vlp;*.vlx;*.udb)|*.vlp;*.vlx;*.udb|All Files (*.*)|*.*";
                 if (ofd.ShowDialog(this) == DialogResult.OK)
                 {
-                    LoadProjectFile(ofd.FileName);
+                    LoadProjectFile(ofd.FileName, true);
                 }
             }
         }
@@ -1365,11 +1499,16 @@ namespace UnitronicsV350Simulator
 
             plc.Stop();
             plc.Project = null;
+            if (plc.SimProfile != null)
+            {
+                plc.SimProfile.ResetToNeutral(plc.Profile, null);
+            }
             if (plc.Memory != null)
             {
                 plc.Memory.ClearFactoryReset(plc);
             }
             plc.Reset();
+            hardwarePanel.RebuildLayout(plc.Profile);
 
             allWatchItems.Clear();
             filteredWatchItems.Clear();
@@ -1389,7 +1528,7 @@ namespace UnitronicsV350Simulator
                 string autoPath = VlpParser.ResolveActiveVisiLogicProjectPath();
                 if (!string.IsNullOrEmpty(autoPath) && File.Exists(autoPath))
                 {
-                    LoadProjectFile(autoPath);
+                    LoadProjectFile(autoPath, true);
                     return;
                 }
 
@@ -1409,6 +1548,7 @@ namespace UnitronicsV350Simulator
         private void ResetPlc()
         {
             plc.Reset();
+            hardwarePanel.RebuildLayout(plc.Profile);
             if (plc.HasProgramLoaded)
             {
                 plc.Start();
@@ -1936,17 +2076,18 @@ namespace UnitronicsV350Simulator
             string romPath = (plc != null && plc.Memory != null) ? plc.Memory.RomFilePath : "rom.bin";
             string ramPath = (plc != null && plc.Memory != null) ? plc.Memory.RamFilePath : "ram.bin";
             string msg =
-                "Unitronics Vision PLC/HMI Simulator v0.0.14 [Portable]\n\n" +
-                "Version: 0.0.14 Portable (Native Windows .NET 4.0 x86 Application)\n" +
+                "Unitronics Vision PLC/HMI Simulator v0.0.15 [Portable]\n\n" +
+                "Version: 0.0.15 Portable (Native Windows .NET 4.0 x86 Application)\n" +
                 "Active Hardware Profile: " + hwName + "\n" +
                 "Language: " + Localization.CurrentLanguage + "\n\n" +
                 "Key Features:\n" +
+                "• 100% Universal Soft-PLC Engine (neutral I/O state after download/load)\n" +
+                "• Interactive Post-Load I/O & Process Simulation Configurator (F8)\n" +
                 "• Startup Hardware Configurator (Vision V130..V1210 controllers and EX-A2X expansion modules)\n" +
                 "• Real-time bilingual user interface (English & Polish)\n" +
                 "• Live binary PLC memory images: rom.bin (4 MB Flash ROM) & ram.bin (256 KB RAM + live hex-editor sync)\n" +
                 "• Configurable diagnostic logging (Error, Warn, Info, Debug, Trace)\n" +
                 "• Direct loading of VisiLogic projects (*.vlp, *.vlx, *.udb)\n" +
-                "• Soft-PLC cyclic ladder execution engine\n" +
                 "• Graphical HMI screen renderer with touchscreen and numeric keypad overlay\n" +
                 "• Virtual I/O cabinet with dynamic EX-A2X expansion bus and analog sliders\n" +
                 "• PCOM TCP server compatible with VisiLogic (Download & Online Test)\n\n" +

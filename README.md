@@ -6,7 +6,7 @@ Built in C# and .NET Framework 4.0 (x86 architecture compatible with Unitronics 
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Platform](https://img.shields.io/badge/platform-Windows%20x86%20%7C%20x64-lightgrey.svg)
-![Version](https://img.shields.io/badge/version-v0.0.6-green.svg)
+![Version](https://img.shields.io/badge/version-v0.0.15-green.svg)
 ![Target](https://img.shields.io/badge/target-Unitronics%20Vision%20Series-brightgreen.svg)
 
 ---
@@ -29,6 +29,15 @@ This simulator is designed to emulate the complete runtime environment for all p
 
 ## 🚀 Key Features
 
+- **100% Universal Project Emulation & Neutral Post-Download State**:
+  - After loading or downloading a project from VisiLogic, all digital inputs (`I`), digital outputs (`O`), and analog inputs (`AI`) start in a **100% neutral unforced state** (`0`).
+  - Zero project-specific hardcoding — executes dynamic ladder nets, HMI screens, and operand descriptions parsed directly from any `.vlp`/`.vlx`/`.udb` or PCOM download.
+- **Interactive I/O & Process Simulation Wizard (`F8`)**:
+  - Automatically prompts after project download/load (and accessible anytime via `Simulation -> Configure I/O & Process Simulation... (F8)`) to configure:
+    - Whether the project should run in pure neutral hardware mode or with active I/O & process simulation.
+    - Digital inputs (`I0..I31`): functional role/description, artificial state (`Neutral 0`, `Forced ON 1`, `Forced OFF 0`), and dynamic behavior (`Manual`, `NC Safety Healthy`, `NO Contact`, `Follow Output O(x)` feedback, `Inverted Output !O(x)`, `Periodic Pulse Generator`).
+    - Digital outputs (`O0..O31`): functional role/description and process actuator type (`None`, `Heating Actuator +dT`, `Cooling Actuator -dT`, `Humidifying +dRH`, `Dehumidifying -dRH`, `Pump/Fan`).
+    - Analog inputs (`AI0..AI7`): sensor type (`PT100/NI1000 Temp`, `0-10V`, `4-20mA`), linked `MI` register, neutral raw value, and closed-loop thermal/process response to heating/cooling outputs.
 - **Startup Hardware Configuration Wizard**:
   - Modal startup dialog allows interactive selection of PLC family and model, Snap-In modules (for modular series V570/V1040/V1210), and up to 8 EX-A2X expansion slots.
   - Strict hardware enforcement: screen resolution, touchscreen capability, and PCOM model identification.
@@ -42,23 +51,22 @@ This simulator is designed to emulate the complete runtime environment for all p
   - Full bidirectional support for **PCOM ASCII** (frames starting with `_` or `/`) and **PCOM Binary** (primitives `0x65`, `0x47`, `0x42`, `0x44`, `0x50`, `0x52`).
   - Implements System Integer inspection: responds to `SI 307` model identifier query (returning `/A00GS0000FB\r`), operand read/write, RTC, and Project Download frames without `5Automation error` in `UnVsCon2.dll`.
   - Operates on standard TCP port `20256` (or configurable).
-- **Soft-PLC Real-Time Engine**:
-  - Deterministic cyclic scan loop (default 20 ms).
+- **Soft-PLC Real-Time Engine & Persistent Memory (`rom.bin` / `ram.bin`)**:
+  - Deterministic cyclic scan loop (default 20 ms) with binary Flash ROM (`rom.bin`) and live RAM (`ram.bin`) persistence.
   - Complete Unitronics operand memory map:
-    - **MB** (Memory Bits): 0 – 4095
-    - **MI** (Memory Integers): 0 – 2047
+    - **MB** (Memory Bits): 0 – 8191
+    - **MI** (Memory Integers): 0 – 4095
     - **ML** (Memory Longs): 0 – 511
-    - **MD** (Double Words): 0 – 255
-    - **MF** (Floats): 0 – 255
-    - **DW** (Double Words): 0 – 255
+    - **MD / DW** (Double Words): 0 – 255
+    - **MF** (Floats): 0 – 63
     - **XB / XI / XD / XL**: Extended operand banks
-    - **Inputs (I)**: 0 – 31 & **Outputs (O)**: 0 – 31
-    - **Timers (T)**: 0 – 383
+    - **Inputs (I)**: 0 – 543 & **Outputs (O)**: 0 – 543
+    - **Timers (T)**: 0 – 383 & **Counters (C)**: 0 – 31
 - **Interactive HMI & Bezel Controls**:
   - High-performance HMI display rendering area with touch coordinate dispatcher.
   - Full Polish diacritics support (UTF-8 / CP1250 font encoding).
   - Front bezel hardware keypad: `ESC`, `ENTER`, numeric `0`–`9`, navigation arrows (`▲`, `▼`, `◄`, `►`), functional keys `F1`–`F8`.
-  - Emulated digital and analog I/O status LED panel.
+  - Emulated digital and analog I/O status LED panel with live tooltips and click-to-toggle support.
 - **Portable Single-Binary Deployment**:
   - Entire simulator bundled in a single standalone executable: `virtualplc.exe`.
   - Zero installers or third-party runtime dependencies required.
@@ -82,11 +90,13 @@ Unitronics-Vision-PLC-HMI-Simulator/
 │   ├── Program.cs               # Application entry point
 │   ├── MainForm.cs              # Main window & layout
 │   ├── HardwareConfigDialog.cs  # Startup hardware configuration wizard
+│   ├── SimulationProfile.cs     # Universal I/O & process simulation rules
+│   ├── SimulationSetupDialog.cs # Interactive post-download simulation wizard
 │   ├── SettingsDialog.cs        # Simulator settings dialog
 │   ├── HardwareProfile.cs       # Vision controller & EX-A2X hardware profiles
 │   ├── Localization.cs          # Bilingual UI strings (English & Polish)
 │   ├── SimulatorConfig.cs       # Configuration persistence (JSON)
-│   ├── PlcEngine.cs             # Cyclic scan engine & task runner
+│   ├── PlcEngine.cs             # Cyclic scan engine, ROM/RAM & dynamic ladder
 │   ├── PcomServer.cs            # PCOM ASCII & Binary protocol server
 │   ├── HmiRenderer.cs           # HMI graphic rendering & touch handling
 │   ├── HardwarePanel.cs         # Bezel keys & I/O panel
