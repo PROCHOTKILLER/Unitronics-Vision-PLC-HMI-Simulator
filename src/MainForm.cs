@@ -128,6 +128,8 @@ namespace UnitronicsV350Simulator
         }
         private List<WatchItem> allWatchItems = new List<WatchItem>();
         private List<WatchItem> filteredWatchItems = new List<WatchItem>();
+        private bool isSimSetupDialogOpen = false;
+        private bool isLoadingProject = false;
 
         public MainForm(SimulatorConfig cfg = null)
         {
@@ -153,7 +155,10 @@ namespace UnitronicsV350Simulator
                 {
                     this.BeginInvoke(new Action(() =>
                     {
-                        LoadProjectFile(projPath, true);
+                        if (!isSimSetupDialogOpen && !isLoadingProject)
+                        {
+                            LoadProjectFile(projPath, true);
+                        }
                     }));
                 }
                 catch { }
@@ -1107,7 +1112,7 @@ namespace UnitronicsV350Simulator
             bool pl = (Localization.CurrentLanguage == AppLanguage.Polish);
             string projName = (plc.Project != null) ? plc.Project.ProjectName : Localization.T("Status_NoProgram");
             string hwFullName = config.Profile != null ? config.Profile.GetModelFullName() : "V350";
-            this.Text = string.Format(Localization.T("AppTitle"), "0.0.15", hwFullName + " - " + projName);
+            this.Text = string.Format(Localization.T("AppTitle"), "0.0.16", hwFullName + " - " + projName);
 
             // Menu: File
             mnuFile.Text = Localization.T("Menu_File");
@@ -1327,6 +1332,8 @@ namespace UnitronicsV350Simulator
         // ==========================================
         public void LoadProjectFile(string filePath, bool promptSimulationWizard = true)
         {
+            if (isLoadingProject) return;
+            isLoadingProject = true;
             try
             {
                 plc.Log("Loading project from file: " + filePath);
@@ -1368,7 +1375,7 @@ namespace UnitronicsV350Simulator
 
                 // Ask user whether this project should be simulated, which inputs should be artificially set,
                 // what role each input/output plays, and how they should behave
-                if (promptSimulationWizard && this.IsHandleCreated)
+                if (promptSimulationWizard && this.IsHandleCreated && !isSimSetupDialogOpen)
                 {
                     OpenSimulationSetupDialog(true);
                 }
@@ -1382,10 +1389,16 @@ namespace UnitronicsV350Simulator
                 MessageBox.Show("Failed to load project:\n" + ex.Message, "VisiLogic Project Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 plc.Log("PROJECT LOAD ERROR: " + ex.Message);
             }
+            finally
+            {
+                isLoadingProject = false;
+            }
         }
 
         public void OpenSimulationSetupDialog(bool isPostLoadPrompt = false)
         {
+            if (isSimSetupDialogOpen) return;
+
             if (plc.SimProfile == null)
             {
                 plc.SimProfile = new ProjectSimulationProfile();
@@ -1398,9 +1411,17 @@ namespace UnitronicsV350Simulator
                 plc.Stop();
             }
 
-            using (var dlg = new SimulationSetupDialog(plc.Project, plc.Profile, plc.SimProfile, isPostLoadPrompt))
+            isSimSetupDialogOpen = true;
+            try
             {
-                dlg.ShowDialog(this);
+                using (var dlg = new SimulationSetupDialog(plc.Project, plc.Profile, plc.SimProfile, isPostLoadPrompt))
+                {
+                    dlg.ShowDialog(this);
+                }
+            }
+            finally
+            {
+                isSimSetupDialogOpen = false;
             }
 
             if (isPostLoadPrompt)
@@ -2076,8 +2097,8 @@ namespace UnitronicsV350Simulator
             string romPath = (plc != null && plc.Memory != null) ? plc.Memory.RomFilePath : "rom.bin";
             string ramPath = (plc != null && plc.Memory != null) ? plc.Memory.RamFilePath : "ram.bin";
             string msg =
-                "Unitronics Vision PLC/HMI Simulator v0.0.15 [Portable]\n\n" +
-                "Version: 0.0.15 Portable (Native Windows .NET 4.0 x86 Application)\n" +
+                "Unitronics Vision PLC/HMI Simulator v0.0.16 [Portable]\n\n" +
+                "Version: 0.0.16 Portable (Native Windows .NET 4.0 x86 Application)\n" +
                 "Active Hardware Profile: " + hwName + "\n" +
                 "Language: " + Localization.CurrentLanguage + "\n\n" +
                 "Key Features:\n" +

@@ -6,7 +6,7 @@ Built in C# and .NET Framework 4.0 (x86 architecture compatible with Unitronics 
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Platform](https://img.shields.io/badge/platform-Windows%20x86%20%7C%20x64-lightgrey.svg)
-![Version](https://img.shields.io/badge/version-v0.0.15-green.svg)
+![Version](https://img.shields.io/badge/version-v0.0.16-green.svg)
 ![Target](https://img.shields.io/badge/target-Unitronics%20Vision%20Series-brightgreen.svg)
 
 ---

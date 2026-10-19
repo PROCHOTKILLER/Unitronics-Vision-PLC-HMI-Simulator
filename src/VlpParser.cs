@@ -34,7 +34,7 @@ namespace UnitronicsV350Simulator
         {
             // Check magic bytes: VisiLogic .vlp can be a ZIP archive (PK\x03\x04) or a raw Jet 4.0 database (\x00\x01\x00\x00)
             byte[] header = new byte[4];
-            using (FileStream fs = new FileStream(vlpPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+            using (FileStream fs = new FileStream(vlpPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
             {
                 if (fs.Length >= 4)
                 {
@@ -55,7 +55,7 @@ namespace UnitronicsV350Simulator
 
             try
             {
-                using (FileStream fs = new FileStream(vlpPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                using (FileStream fs = new FileStream(vlpPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
                 using (ZipArchive archive = new ZipArchive(fs, ZipArchiveMode.Read))
                 {
                     archive.ExtractToDirectory(tempDir);
@@ -124,7 +124,7 @@ namespace UnitronicsV350Simulator
                 }
             }
 
-            // Copy the .udb file to an isolated temp path using FileShare.ReadWrite so Jet 4.0 OLEDB never fails
+            // Copy the .udb file to an isolated temp path using FileShare.ReadWrite | FileShare.Delete so Jet 4.0 OLEDB never fails
             // with file-locking (.ldb) or Program Files directory permission errors while VisiLogic is open.
             string tempUdbDir = Path.Combine(Path.GetTempPath(), "V350_UDB_" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(tempUdbDir);
@@ -132,7 +132,7 @@ namespace UnitronicsV350Simulator
 
             try
             {
-                using (FileStream srcStream = new FileStream(udbPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                using (FileStream srcStream = new FileStream(udbPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
                 using (FileStream dstStream = new FileStream(tempUdbPath, FileMode.Create, FileAccess.Write, FileShare.None))
                 {
                     srcStream.CopyTo(dstStream);

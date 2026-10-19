@@ -24,7 +24,10 @@ namespace UnitronicsV350Simulator
         public event Action<string> OnProjectDownloaded;
         private DateTime lastAutoReloadUtc = DateTime.MinValue;
         private volatile bool hasPendingDownloadReload = false;
+        private volatile bool hasDownloadSessionActivity = false;
         private System.Threading.Timer downloadCompleteTimer;
+        private string cachedExpectedPlcName = null;
+        private DateTime lastPlcNameResolveUtc = DateTime.MinValue;
 
         public bool IsActive { get { return isRunning; } }
 
@@ -129,10 +132,6 @@ namespace UnitronicsV350Simulator
                 if (plc != null && plc.Memory != null)
                 {
                     plc.Memory.FlushAll(plc);
-                }
-                if (hasPendingDownloadReload)
-                {
-                    CompletePendingDownloadReload();
                 }
             }
         }
@@ -353,16 +352,54 @@ namespace UnitronicsV350Simulator
             // 4. CPU Control: STOP (CCS, ST)
             else if (cmdBody.StartsWith("CCS") || cmdBody.StartsWith("ST"))
             {
+                hasDownloadSessionActivity = true;
+                CancelPendingDownloadReload();
                 plc.Stop();
                 plc.Log("PCOM: PLC engine stopped by VisiLogic request (STOP mode).");
                 return FormatPcomAsciiResponse(unitId, cmdBody.Substring(0, 2));
             }
 
-            // 5. CPU Control: RUN (CCR, RN)
-            else if (cmdBody.StartsWith("CCR") || cmdBody.StartsWith("RN"))
+            // 5. Read Long / Double Word Registers (RNJ, RNL, RNH, RND, or RN with address+length)
+            else if (cmdBody.StartsWith("RN") && cmdBody.Length >= 8)
             {
-                TriggerProjectAutoReload();
+                // e.g. /00RNJ00160273 -> cmdBody="RNJ001602" (Read 2 System Longs SL[22..23])
+                int paramOffset = (cmdBody.Length >= 9 && !Uri.IsHexDigit(cmdBody[2])) ? 3 : 2;
+                char subType = (paramOffset == 3) ? cmdBody[2] : 'L';
+                int addr = 0;
+                int len = 1;
+                if (cmdBody.Length >= paramOffset + 6)
+                {
+                    try
+                    {
+                        addr = Convert.ToInt32(cmdBody.Substring(paramOffset, 4), 16);
+                        len = Convert.ToInt32(cmdBody.Substring(paramOffset + 4, 2), 16);
+                    }
+                    catch { }
+                }
+
+                StringBuilder sb = new StringBuilder();
+                for (int i = 0; i < len; i++)
+                {
+                    int reg = addr + i;
+                    int val = 0;
+                    if (subType != 'J' && subType != 'D')
+                    {
+                        val = (reg >= 0 && reg < plc.ML.Length) ? plc.ML[reg] : 0;
+                    }
+                    sb.Append(((uint)val).ToString("X8"));
+                }
+                plc.Log(string.Format("PCOM ASCII {0}: Read Long[{1}..{2}] = {3}", cmdBody.Substring(0, paramOffset), addr, addr + len - 1, sb.ToString()));
+                return FormatPcomAsciiResponse(unitId, "RN" + sb.ToString());
+            }
+
+            // 5b. CPU Control: RUN (CCR, exact RN)
+            else if (cmdBody.StartsWith("CCR") || cmdBody == "RN")
+            {
                 plc.Start();
+                if (hasDownloadSessionActivity || !plc.HasProgramLoaded)
+                {
+                    SchedulePostDownloadAutoReload(250);
+                }
                 plc.Log("PCOM: PLC engine started by VisiLogic request (RUN mode).");
                 return FormatPcomAsciiResponse(unitId, cmdBody.Substring(0, 2));
             }
@@ -377,19 +414,12 @@ namespace UnitronicsV350Simulator
             // 7. CPU Reset / Warm Reset (RS, CCI, CCE, CCM) - sent by VisiLogic at the end of Download (/00CCE2B)
             else if (cmdBody.StartsWith("RS") || cmdBody.StartsWith("CCI") || cmdBody.StartsWith("CCE") || cmdBody.StartsWith("CCM"))
             {
-                bool justReloaded = TriggerProjectAutoReload();
-                if (!justReloaded)
-                {
-                    plc.Reset();
-                    if (plc.HasProgramLoaded)
-                    {
-                        plc.Start();
-                    }
-                }
-                else if (plc.State != PlcRunState.RUN && plc.HasProgramLoaded)
+                plc.Reset();
+                if (plc.HasProgramLoaded)
                 {
                     plc.Start();
                 }
+                SchedulePostDownloadAutoReload(250);
                 plc.Log("PCOM: Warm Reset (" + cmdBody.Substring(0, Math.Min(3, cmdBody.Length)) + ") executed -> PLC in RUN mode.");
                 return FormatPcomAsciiResponse(unitId, cmdBody.Substring(0, 2));
             }
@@ -504,10 +534,12 @@ namespace UnitronicsV350Simulator
 
             plc.Log(string.Format("PCOM Binary REQ: Opcode=0x{0:X2}, DataLen={1}", opcode, dataLen));
 
-            if (opcode == 0x10 || opcode == 0x16 || opcode == 0x18 || opcode == 0x1E ||
-                opcode == 0x20 || opcode == 0x41 || opcode == 0x45 || !plc.HasProgramLoaded)
+            // During active download blocks (Erase / Write / Commit / Resource prep), mark download activity
+            // and cancel any pending post-download reload timer so we never reload or open dialogs mid-download.
+            if (opcode == 0x09 || opcode == 0x0A || opcode == 0x10 || opcode == 0x1A || opcode == 0x41 || opcode == 0x45)
             {
-                SchedulePostDownloadAutoReload();
+                hasDownloadSessionActivity = true;
+                CancelPendingDownloadReload();
             }
 
             byte[] respPayload = null;
@@ -544,12 +576,11 @@ namespace UnitronicsV350Simulator
                     break;
 
                 case 0x45: // Flash & Memory Commit ("Programming Flash and Memory")
-                    plc.Log("PCOM Binary: FLASH commit command (0x45) - program successfully downloaded by VisiLogic!");
+                    plc.Log("PCOM Binary: FLASH commit command (0x45) - flash block committed (waiting for final RUN/CCE command).");
                     if (plc != null && plc.Memory != null)
                     {
                         plc.Memory.FlushAll(plc);
                     }
-                    TriggerProjectAutoReload();
                     break;
 
                 case 0x0F: // PLC Run / Stop / Reset / Init control command
@@ -561,6 +592,8 @@ namespace UnitronicsV350Simulator
                     }
                     if (subCmd == 0x5555)
                     {
+                        hasDownloadSessionActivity = true;
+                        CancelPendingDownloadReload();
                         plc.Stop();
                         plc.Log("PCOM Binary: PLC stopped (0x0F sub=0x5555).");
                     }
@@ -568,14 +601,17 @@ namespace UnitronicsV350Simulator
                     {
                         plc.Start();
                         plc.Log("PCOM Binary: PLC started (0x0F sub=0x" + subCmd.ToString("X4") + ").");
-                        TriggerProjectAutoReload();
+                        if (hasDownloadSessionActivity || !plc.HasProgramLoaded)
+                        {
+                            SchedulePostDownloadAutoReload(250);
+                        }
                     }
                     else if (subCmd == 0xA5A5)
                     {
                         plc.Reset();
                         plc.Start();
                         plc.Log("PCOM Binary: PLC reset & started (0x0F sub=0xA5A5).");
-                        TriggerProjectAutoReload();
+                        SchedulePostDownloadAutoReload(250);
                     }
                     break;
                 }
@@ -990,13 +1026,19 @@ namespace UnitronicsV350Simulator
 
         private string ResolveExpectedPlcName()
         {
+            if (!string.IsNullOrEmpty(cachedExpectedPlcName) &&
+                (hasDownloadSessionActivity || (DateTime.UtcNow - lastPlcNameResolveUtc).TotalSeconds < 15.0))
+            {
+                return cachedExpectedPlcName;
+            }
+
             try
             {
                 string udbPath = @"C:\Program Files (x86)\Unitronics\Unitronics VisiLogic_C\Data\DB\Current_OPLC.udb";
                 if (File.Exists(udbPath))
                 {
                     byte[] raw;
-                    using (FileStream fs = new FileStream(udbPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                    using (FileStream fs = new FileStream(udbPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
                     {
                         raw = new byte[fs.Length];
                         fs.Read(raw, 0, raw.Length);
@@ -1009,14 +1051,18 @@ namespace UnitronicsV350Simulator
                     Match mLocal = Regex.Match(text, @"(?:127\.0\.0\.1|localhost)\t([^\t\r\n\x00]*)\t20256");
                     if (mLocal.Success)
                     {
-                        return mLocal.Groups[1].Value;
+                        cachedExpectedPlcName = mLocal.Groups[1].Value;
+                        lastPlcNameResolveUtc = DateTime.UtcNow;
+                        return cachedExpectedPlcName;
                     }
 
                     // Priority 2: Match any IPv4 entry targeting port 20256
                     Match mAny = Regex.Match(text, @"\d+\.\d+\.\d+\.\d+\t([^\t\r\n\x00]*)\t20256");
                     if (mAny.Success)
                     {
-                        return mAny.Groups[1].Value;
+                        cachedExpectedPlcName = mAny.Groups[1].Value;
+                        lastPlcNameResolveUtc = DateTime.UtcNow;
+                        return cachedExpectedPlcName;
                     }
                 }
             }
@@ -1028,17 +1074,30 @@ namespace UnitronicsV350Simulator
                 }
             }
 
-            return "virtual";
+            return cachedExpectedPlcName ?? "virtual";
         }
 
-        private void SchedulePostDownloadAutoReload()
+        private void CancelPendingDownloadReload()
+        {
+            hasPendingDownloadReload = false;
+            try
+            {
+                if (downloadCompleteTimer != null)
+                {
+                    downloadCompleteTimer.Change(Timeout.Infinite, Timeout.Infinite);
+                }
+            }
+            catch { }
+        }
+
+        private void SchedulePostDownloadAutoReload(int delayMs = 250)
         {
             hasPendingDownloadReload = true;
             try
             {
                 if (downloadCompleteTimer != null)
                 {
-                    downloadCompleteTimer.Change(600, Timeout.Infinite);
+                    downloadCompleteTimer.Change(delayMs, Timeout.Infinite);
                 }
             }
             catch { }
@@ -1048,6 +1107,7 @@ namespace UnitronicsV350Simulator
         {
             if (!hasPendingDownloadReload) return;
             hasPendingDownloadReload = false;
+            hasDownloadSessionActivity = false;
             try
             {
                 if (downloadCompleteTimer != null)
@@ -1069,6 +1129,7 @@ namespace UnitronicsV350Simulator
             try
             {
                 hasPendingDownloadReload = false;
+                hasDownloadSessionActivity = false;
                 if (!force && (DateTime.UtcNow - lastAutoReloadUtc).TotalSeconds < 2.5)
                 {
                     return true;
@@ -1078,7 +1139,7 @@ namespace UnitronicsV350Simulator
                 if (!string.IsNullOrEmpty(projectPath) && OnProjectDownloaded != null)
                 {
                     lastAutoReloadUtc = DateTime.UtcNow;
-                    plc.Log("PCOM: Automatically loading downloaded project into PLC engine: " + projectPath);
+                    plc.Log("PCOM: Final RUN command received -> loading downloaded project into PLC engine: " + projectPath);
                     OnProjectDownloaded(projectPath);
                     return true;
                 }
