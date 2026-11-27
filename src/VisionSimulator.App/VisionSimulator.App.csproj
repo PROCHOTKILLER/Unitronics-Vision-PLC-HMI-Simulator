@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <RootNamespace>VisionSimulator.App</RootNamespace>
+    <AssemblyName>VisionSimulator</AssemblyName>
+    <!-- Dwie architektury: domyślnie win-x64 (provider ACE 16.0, wymaga Access Database Engine x64),
+         wersja zapasowa win-x86 (wbudowany Jet 4.0) przez "-r win-x86". PlatformTarget wynika z RID. -->
+    <RuntimeIdentifiers>win-x64;win-x86</RuntimeIdentifiers>
+    <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == ''">win-x64</RuntimeIdentifier>
+    <!-- Self-contained: stacja nie musi mieć zainstalowanego runtime .NET 10. -->
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\VisionSimulator.Core\VisionSimulator.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="appsettings.json" CopyToOutputDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
+    <None Update="appsettings.Local.json" CopyToOutputDirectory="PreserveNewest" ExcludeFromSingleFile="true" Condition="Exists('appsettings.Local.json')" />
+    <!-- Przykładowy profil projektu JSON (Simulation:ProfilePath = "examples\\profile-example.json" albo „Wczytaj profil…”). -->
+    <None Include="..\..\examples\profile-example.json" Link="examples\profile-example.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
+    <!-- Instalator Access Database Engine 2016 x64 (poza Git): src/VisionSimulator.App/redist/accessdatabaseengine_X64.exe
+         trafia obok exe do build i publish; tylko w wersji win-x64. -->
+    <None Update="redist\*.exe" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" Condition="'$(RuntimeIdentifier)' == 'win-x64'" />
+  </ItemGroup>
+
+</Project>

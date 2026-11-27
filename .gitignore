@@ -1,21 +1,25 @@
-# Executables (distributed via GitHub Releases)
-*.exe
-**/*.exe
-
-# Logs, local config & simulated PLC memory images
-*.log
-virtualplc_debug.log
-virtualplc_config.json
-rom.bin
-ram.bin
-
-# Build artifacts & temp
+## Visual Studio / .NET
+.vs/
 bin/
 obj/
-*.tmp
-*.pdb
+*.user
+*.suo
+TestResults/
+publish/
 
-# OS files
+## Konfiguracja lokalna (stałe dostępu do baz VisiLogic, ścieżki stacji)
+appsettings.Local.json
+
+## Instalatory zewnętrzne (Access Database Engine x64, ok. 80 MB) — kopiowane ręcznie na stację
+redist/
+
+## Stan symulatora i logi
+rom.bin
+ram.bin
+*.log
+
+## Pliki wykonywalne (dystrybucja przez GitHub Releases) i pliki systemowe
+*.exe
+*.pdb
 Thumbs.db
 Desktop.ini
-.DS_Store

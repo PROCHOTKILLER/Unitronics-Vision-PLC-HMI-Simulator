@@ -1,0 +1,378 @@
+<Window x:Class="VisionSimulator.App.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="clr-namespace:VisionSimulator.App.ViewModels"
+        xmlns:controls="clr-namespace:VisionSimulator.App.Controls"
+        mc:Ignorable="d"
+        d:DataContext="{d:DesignInstance Type=vm:MainViewModel}"
+        Title="Unitronics Vision PLC-HMI Simulator"
+        Width="1240" Height="720" MinWidth="1024" MinHeight="640"
+        WindowStartupLocation="CenterScreen"
+        UseLayoutRounding="True"
+        SnapsToDevicePixels="True">
+    <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BooleanToVisibility" />
+
+        <!-- Komunikat widoczny tylko wtedy, gdy projekt nie ma ekranów HMI -->
+        <Style x:Key="NoDisplaysMessage" TargetType="TextBlock">
+            <Setter Property="Visibility" Value="Collapsed" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Hmi.HasDisplays}" Value="False">
+                    <Setter Property="Visibility" Value="Visible" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+    </Window.Resources>
+
+    <!-- ARCHITEKTURA I SEKCJE STRONY: pasek sterowania, podsumowanie, pasek stanu i zakładki robocze -->
+    <DockPanel Margin="12">
+        <!-- Pasek sterowania: wczytanie projektu i cykl skanu -->
+        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,8">
+            <Button Content="Wczytaj projekt…" Padding="12,0" Margin="0,0,8,0" Command="{Binding LoadProjectCommand}" />
+            <Button Content="Eksport schematu…" Padding="12,0" Margin="0,0,16,0" Command="{Binding ExportSchemaCommand}"
+                    ToolTip="Zapisuje nazwy tabel, kolumn, typy i liczby wierszy bazy projektu (bez wartości) do pliku .md" />
+            <Button Content="Wczytaj profil…" Padding="12,0" Margin="0,0,8,0" Command="{Binding LoadProfileCommand}"
+                    ToolTip="Profil JSON: wartości początkowe i symulacja obiektu (sprzężenia bitowe, analogi). Układ pamięci tylko przy starcie (Simulation:ProfilePath)" />
+            <Button Content="Wyłącz profil" Padding="12,0" Margin="0,0,16,0" Command="{Binding UnloadProfileCommand}" />
+            <Button Content="Zainstaluj ACE…" Padding="12,0" Margin="0,0,16,0" Command="{Binding InstallAceCommand}"
+                    Visibility="{Binding IsAceMissing, Converter={StaticResource BooleanToVisibility}}"
+                    ToolTip="Instaluje Microsoft Access Database Engine 2016 (x64) z katalogu redist obok programu (wymaga zgody administratora)" />
+            <Button Content="RUN" Width="90" Margin="0,0,8,0" Command="{Binding RunCommand}" />
+            <Button Content="STOP" Width="90" Margin="0,0,8,0" Command="{Binding StopCommand}" />
+            <Button Content="RESET" Width="90" Command="{Binding ResetCommand}" />
+        </StackPanel>
+
+        <!-- Podsumowanie wczytanego projektu -->
+        <TextBlock DockPanel.Dock="Top" Text="{Binding ProjectSummary}" TextWrapping="Wrap" Margin="0,0,0,4" />
+
+        <!-- Podsumowanie profilu symulacji obiektu -->
+        <TextBlock DockPanel.Dock="Top" Text="{Binding ProfileSummary}" TextWrapping="Wrap" Margin="0,0,0,8" Foreground="#475569" />
+
+        <!-- Pasek stanu -->
+        <StatusBar DockPanel.Dock="Bottom">
+            <StatusBarItem>
+                <TextBlock Text="{Binding State, StringFormat='Stan: {0}'}" />
+            </StatusBarItem>
+            <Separator />
+            <StatusBarItem>
+                <TextBlock Text="{Binding ScanCount, StringFormat='Skan: {0:N0}'}" />
+            </StatusBarItem>
+            <Separator />
+            <StatusBarItem>
+                <TextBlock Text="{Binding AnomalyCount, StringFormat='Anomalie LAD: {0:N0}'}"
+                           ToolTip="{Binding LastAnomaly}" />
+            </StatusBarItem>
+            <Separator />
+            <StatusBarItem>
+                <TextBlock Text="{Binding PcomStatus}" />
+            </StatusBarItem>
+            <Separator />
+            <StatusBarItem>
+                <TextBlock Text="{Binding RuntimeInfo}" />
+            </StatusBarItem>
+        </StatusBar>
+
+        <TabControl>
+            <!-- Zakładka 1: panel HMI 320x240 skalowany przez Viewbox -->
+            <TabItem Header="Panel HMI">
+                <Grid Margin="8">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,4">
+                        <TextBlock Text="Ekran:" VerticalAlignment="Center" Margin="0,0,8,0" />
+                        <ComboBox MinWidth="280"
+                                  ItemsSource="{Binding Hmi.Displays}"
+                                  SelectedItem="{Binding Hmi.SelectedDisplay}"
+                                  DisplayMemberPath="Label" />
+                    </StackPanel>
+
+                    <!-- Ostrzeżenie: w STOP drabinka nie działa, więc przyciski nawigacji z LAD nie przełączają ekranów -->
+                    <Border Grid.Row="1" Background="#FEF3C7" BorderBrush="#F59E0B" BorderThickness="1" Padding="8,4" Margin="0,0,0,4"
+                            Visibility="{Binding Hmi.IsPlcStopped, Converter={StaticResource BooleanToVisibility}}">
+                        <TextBlock TextWrapping="Wrap" Foreground="#78350F"
+                                   Text="Sterownik w STOP: dotyk ustawia bity, ale drabinka i skoki ekranów działają dopiero po RUN." />
+                    </Border>
+
+                    <Border Grid.Row="2" Background="#0F172A" Padding="8">
+                        <Grid>
+                            <Viewbox Stretch="Uniform" StretchDirection="Both"
+                                     HorizontalAlignment="Center" VerticalAlignment="Center">
+                                <controls:HmiScreenView Screen="{Binding Hmi.Screen}"
+                                                        PressCommand="{Binding Hmi.PressCommand}"
+                                                        ReleaseCommand="{Binding Hmi.ReleaseCommand}"
+                                                        EditCommand="{Binding Hmi.EditCommand}"
+                                                        ProbeCommand="{Binding Hmi.ProbeCommand}" />
+                            </Viewbox>
+                            <TextBlock Style="{StaticResource NoDisplaysMessage}"
+                                       Text="Wczytaj projekt, aby zobaczyć ekrany"
+                                       Foreground="#CBD5E1" FontSize="16"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Grid>
+                    </Border>
+
+                    <!-- Diagnostyka dotyku i tablicy skoków ekranów -->
+                    <StackPanel Grid.Row="3" Margin="0,6,0,0">
+                        <TextBlock Text="{Binding Hmi.TouchStatus}" TextWrapping="Wrap" FontFamily="Consolas" />
+                        <TextBlock Text="{Binding Hmi.JumpSummary}" TextWrapping="Wrap" Foreground="#475569"
+                                   ToolTip="Przycisk: kliknij. Zmienna liczbowa: dwuklik (z niebieską ramką: kliknięcie) otwiera wpis wartości." />
+                    </StackPanel>
+                </Grid>
+            </TabItem>
+
+            <!-- Zakładka 2: drabinka LAD wybranego podprogramu z zasileniem elementów i wartościami operandów na żywo -->
+            <TabItem Header="Drabinka" IsSelected="{Binding LadderView.IsActive, Mode=OneWayToSource}">
+                <Grid Margin="8">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,4">
+                        <TextBlock Text="Podprogram:" VerticalAlignment="Center" Margin="0,0,8,0" />
+                        <ComboBox MinWidth="360"
+                                  ItemsSource="{Binding LadderView.Subroutines}"
+                                  SelectedItem="{Binding LadderView.SelectedSubroutine}"
+                                  DisplayMemberPath="DisplayName" />
+                    </StackPanel>
+
+                    <TextBlock Grid.Row="1" Text="{Binding LadderView.Summary}" TextWrapping="Wrap" Foreground="#475569" Margin="0,0,0,4"
+                               ToolTip="Najedź na element, aby zobaczyć operandy z opisami, wartości oraz zasilenie wejścia i wyjścia." />
+
+                    <!-- Lista szczebli: wirtualizacja z przewijaniem pikselowym, bo program może mieć setki szczebli -->
+                    <Border Grid.Row="2" BorderBrush="#CBD5E1" BorderThickness="1" Background="White">
+                        <ItemsControl ItemsSource="{Binding LadderView.Rungs}"
+                                      VirtualizingPanel.IsVirtualizing="True"
+                                      VirtualizingPanel.VirtualizationMode="Recycling"
+                                      VirtualizingPanel.ScrollUnit="Pixel"
+                                      ScrollViewer.CanContentScroll="True">
+                            <ItemsControl.Template>
+                                <ControlTemplate TargetType="ItemsControl">
+                                    <ScrollViewer CanContentScroll="True" Padding="8,4"
+                                                  HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+                                        <ItemsPresenter />
+                                    </ScrollViewer>
+                                </ControlTemplate>
+                            </ItemsControl.Template>
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <VirtualizingStackPanel />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate DataType="{x:Type vm:LadderRungViewModel}">
+                                    <Border BorderBrush="#E2E8F0" BorderThickness="0,0,0,1" Padding="0,4,0,6">
+                                        <StackPanel>
+                                            <StackPanel Orientation="Horizontal" Margin="0,0,0,2">
+                                                <TextBlock Text="{Binding Header}" FontWeight="SemiBold" Foreground="#0F172A"
+                                                           MaxWidth="900" TextTrimming="CharacterEllipsis" />
+                                                <TextBlock Text="{Binding StatusText}" Foreground="#B45309" Margin="12,0,0,0" />
+                                            </StackPanel>
+                                            <controls:LadderRungCanvas Rung="{Binding Layout}" State="{Binding State}" HorizontalAlignment="Left" />
+                                        </StackPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </Border>
+                </Grid>
+            </TabItem>
+
+            <!-- Zakładka 3: tabela operandów projektu (opis, użycie w LAD/HMI, wartość na żywo, zapis i przełączanie) -->
+            <TabItem Header="Tabela operandów" IsSelected="{Binding Operands.IsActive, Mode=OneWayToSource}">
+                <Grid Margin="8">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,4">
+                        <TextBlock Text="Szukaj:" VerticalAlignment="Center" Margin="0,0,8,0" />
+                        <TextBox Width="220" Margin="0,0,12,0" VerticalContentAlignment="Center"
+                                 ToolTip="Adres (np. MB 10) albo fragment opisu"
+                                 Text="{Binding Operands.FilterText, UpdateSourceTrigger=PropertyChanged, Delay=250}" />
+                        <TextBlock Text="Typ:" VerticalAlignment="Center" Margin="0,0,8,0" />
+                        <ComboBox Width="110" Margin="0,0,12,0"
+                                  ItemsSource="{Binding Operands.Types}"
+                                  SelectedItem="{Binding Operands.TypeFilter}" />
+                        <CheckBox Content="Tylko używane w LAD/HMI" VerticalAlignment="Center" Margin="0,0,12,0"
+                                  IsChecked="{Binding Operands.UsedOnly}" />
+                        <Button Content="Wyczyść filtr" Padding="12,2" Margin="0,0,16,0" Command="{Binding Operands.ClearFilterCommand}" />
+                        <TextBlock Text="{Binding Operands.Summary}" VerticalAlignment="Center" Foreground="#475569" />
+                    </StackPanel>
+
+                    <TextBlock Grid.Row="1" Text="{Binding Operands.Message}" Foreground="#1D4ED8" Margin="0,0,0,4" TextWrapping="Wrap" />
+
+                    <!-- Lista operandów: wirtualizacja wierszy, bo projekt może mieć tysiące operandów -->
+                    <DataGrid Grid.Row="2" ItemsSource="{Binding Operands.Rows}" AutoGenerateColumns="False"
+                              IsReadOnly="True" CanUserAddRows="False" HeadersVisibility="Column"
+                              GridLinesVisibility="Horizontal" AlternatingRowBackground="#F8FAFC"
+                              SelectionUnit="FullRow" SelectionMode="Single"
+                              EnableRowVirtualization="True" VirtualizingPanel.VirtualizationMode="Recycling">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Adres" Binding="{Binding AddressText}" />
+                            <DataGridTextColumn Header="Opis" Binding="{Binding Description}" Width="*" />
+                            <DataGridTextColumn Header="Wartość" Binding="{Binding Value}" MinWidth="80" />
+                            <DataGridTemplateColumn Header="Użycie" SortMemberPath="Usage">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding Usage}" ToolTip="{Binding UsageDetails}" />
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                            <DataGridTextColumn Header="Wymuszenie" Binding="{Binding ForceText}" />
+                            <DataGridTemplateColumn Header="Akcje" Width="Auto">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <StackPanel Orientation="Horizontal">
+                                            <!-- Bity: przełączenie stanu i przeniesienie do tabeli wymuszeń -->
+                                            <StackPanel Orientation="Horizontal"
+                                                        Visibility="{Binding IsBit, Converter={StaticResource BooleanToVisibility}}">
+                                                <Button Content="Przełącz" Padding="8,1" Margin="0,0,4,0"
+                                                        Command="{Binding DataContext.Operands.ToggleCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                        CommandParameter="{Binding}" />
+                                                <Button Content="Wymuś" Padding="8,1" Margin="0,0,4,0"
+                                                        ToolTip="Wymusza bieżącą wartość; zmiana i zwolnienie w zakładce „Tabela wymuszeń”"
+                                                        Command="{Binding DataContext.Operands.ForceCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                        CommandParameter="{Binding}" />
+                                            </StackPanel>
+                                            <!-- Rejestry: zapis wartości (timery i liczniki tylko do odczytu) -->
+                                            <StackPanel Orientation="Horizontal"
+                                                        Visibility="{Binding IsWritable, Converter={StaticResource BooleanToVisibility}}">
+                                                <TextBox Width="90" Margin="0,0,4,0" VerticalContentAlignment="Center"
+                                                         Text="{Binding Input, UpdateSourceTrigger=PropertyChanged}">
+                                                    <TextBox.InputBindings>
+                                                        <KeyBinding Key="Return"
+                                                                    Command="{Binding DataContext.Operands.WriteCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                    CommandParameter="{Binding}" />
+                                                    </TextBox.InputBindings>
+                                                </TextBox>
+                                                <Button Content="Zapisz" Padding="8,1" Margin="0,0,4,0"
+                                                        Command="{Binding DataContext.Operands.WriteCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                        CommandParameter="{Binding}" />
+                                            </StackPanel>
+                                            <TextBlock Text="{Binding Message}" Foreground="#DC2626" VerticalAlignment="Center" Margin="0,0,4,0" />
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </Grid>
+            </TabItem>
+
+            <!-- Zakładka 4: tabela wymuszeń bitów (dodawanie po adresie, zmiana 1/0, zwalnianie) -->
+            <TabItem Header="Tabela wymuszeń" IsSelected="{Binding Forces.IsActive, Mode=OneWayToSource}">
+                <Grid Margin="8">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,4">
+                        <TextBlock Text="Adres bitu:" VerticalAlignment="Center" Margin="0,0,8,0" />
+                        <TextBox Width="140" Margin="0,0,8,0" VerticalContentAlignment="Center"
+                                 ToolTip="I, O, MB, SB lub XB, np. I 3"
+                                 Text="{Binding Forces.AddressInput, UpdateSourceTrigger=PropertyChanged}">
+                            <TextBox.InputBindings>
+                                <KeyBinding Key="Return" Command="{Binding Forces.AddOnCommand}" />
+                            </TextBox.InputBindings>
+                        </TextBox>
+                        <Button Content="Wymuś 1" Padding="12,2" Margin="0,0,8,0" Command="{Binding Forces.AddOnCommand}" />
+                        <Button Content="Wymuś 0" Padding="12,2" Margin="0,0,16,0" Command="{Binding Forces.AddOffCommand}" />
+                        <Button Content="Zwolnij wszystkie" Padding="12,2" Margin="0,0,16,0" Command="{Binding Forces.ReleaseAllCommand}" />
+                        <TextBlock Text="{Binding Forces.Summary}" VerticalAlignment="Center" Foreground="#475569" />
+                    </StackPanel>
+
+                    <TextBlock Grid.Row="1" Text="{Binding Forces.Message}" Foreground="#1D4ED8" Margin="0,0,0,4" TextWrapping="Wrap" />
+
+                    <!-- Ostrzeżenie: wymuszenia nakłada skan, więc w STOP stan w pamięci się nie zmienia -->
+                    <Border Grid.Row="2" Background="#FEF3C7" BorderBrush="#F59E0B" BorderThickness="1" Padding="8,4" Margin="0,0,0,4"
+                            Visibility="{Binding Hmi.IsPlcStopped, Converter={StaticResource BooleanToVisibility}}">
+                        <TextBlock TextWrapping="Wrap" Foreground="#78350F"
+                                   Text="Sterownik w STOP: wymuszenia zadziałają w pamięci dopiero po RUN." />
+                    </Border>
+
+                    <DataGrid Grid.Row="3" ItemsSource="{Binding Forces.Rows}" AutoGenerateColumns="False"
+                              IsReadOnly="True" CanUserAddRows="False" HeadersVisibility="Column"
+                              GridLinesVisibility="Horizontal" AlternatingRowBackground="#F8FAFC"
+                              SelectionUnit="FullRow" SelectionMode="Single">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Adres" Binding="{Binding AddressText}" />
+                            <DataGridTextColumn Header="Opis" Binding="{Binding Description}" Width="*" />
+                            <DataGridTextColumn Header="Wymuszenie" Binding="{Binding ForcedText}" />
+                            <DataGridTextColumn Header="Stan w pamięci" Binding="{Binding MemoryValue}" />
+                            <DataGridTemplateColumn Header="Akcje" Width="Auto">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <StackPanel Orientation="Horizontal">
+                                            <Button Content="1" Width="32" Margin="0,0,4,0"
+                                                    Command="{Binding DataContext.Forces.SetOnCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                    CommandParameter="{Binding}" />
+                                            <Button Content="0" Width="32" Margin="0,0,4,0"
+                                                    Command="{Binding DataContext.Forces.SetOffCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                    CommandParameter="{Binding}" />
+                                            <Button Content="Zwolnij" Padding="8,1"
+                                                    Command="{Binding DataContext.Forces.ReleaseCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                    CommandParameter="{Binding}" />
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </Grid>
+            </TabItem>
+
+            <!-- Zakładka 5: podprogramy LAD i ostrzeżenia odczytu projektu -->
+            <TabItem Header="Projekt">
+                <Grid Margin="8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="2*" />
+                        <ColumnDefinition Width="3*" />
+                    </Grid.ColumnDefinitions>
+
+                    <GroupBox Grid.Column="0" Header="Podprogramy" Margin="0,0,8,0">
+                        <DataGrid ItemsSource="{Binding Subroutines}" AutoGenerateColumns="False" IsReadOnly="True"
+                                  HeadersVisibility="Column" CanUserAddRows="False" GridLinesVisibility="Horizontal">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="ID" Binding="{Binding Id}" />
+                                <DataGridTextColumn Header="Nazwa" Binding="{Binding Name}" Width="*" />
+                                <DataGridTextColumn Header="Rungi" Binding="{Binding Rungs}" />
+                                <DataGridTextColumn Header="Elementy" Binding="{Binding Elements}" />
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </GroupBox>
+
+                    <GroupBox Grid.Column="1" Header="Ostrzeżenia">
+                        <ListBox ItemsSource="{Binding Warnings}" BorderThickness="0"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding}" TextWrapping="Wrap" />
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                    </GroupBox>
+                </Grid>
+            </TabItem>
+
+            <!-- Zakładka 6: dziennik zdarzeń (PCOM, skan, błędy wczytywania) -->
+            <TabItem Header="Dziennik">
+                <ListBox Margin="8" ItemsSource="{Binding Log.Entries}" FontFamily="Consolas"
+                         ScrollViewer.HorizontalScrollBarVisibility="Auto" />
+            </TabItem>
+        </TabControl>
+    </DockPanel>
+    <!-- /ARCHITEKTURA I SEKCJE STRONY: pasek sterowania, podsumowanie, pasek stanu i zakładki robocze -->
+</Window>

@@ -1,0 +1,13 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/VisionSimulator.Core/VisionSimulator.Core.csproj" />
+    <Project Path="src/VisionSimulator.App/VisionSimulator.App.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/VisionSimulator.Tests/VisionSimulator.Tests.csproj" />
+  </Folder>
+  <Folder Name="/Solution Items/">
+    <File Path="Directory.Build.props" />
+    <File Path="Directory.Packages.props" />
+  </Folder>
+</Solution>

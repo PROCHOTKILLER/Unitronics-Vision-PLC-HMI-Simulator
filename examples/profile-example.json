@@ -1,0 +1,33 @@
+// Przykładowy profil symulatora (generyczny obiekt: wentylator, grzałka, zawór).
+// Użycie: "Simulation": { "ProfilePath": "examples\\profile-example.json" } w appsettings.Local.json
+// albo przycisk „Wczytaj profil…”. Adresy operandów: "<typ> <indeks>", np. "O 0", "MI 10", "MF 2".
+// Nieznane pola są błędem — literówka w nazwie pola zatrzymuje wczytanie profilu.
+{
+  "name": "Przykład: wentylator + grzałka + zawór",
+  "model": "V350",
+
+  // Opcjonalne nadpisania liczności operandów (działają tylko przy starcie z Simulation:ProfilePath).
+  "memory": {
+  },
+
+  // Zapisywane w pierwszym skanie po starcie i po RESET, przed drabinką.
+  "initialValues": [
+    { "address": "MI 100", "value": 650 },   // wartość zadana temperatury ×10 (65,0 °C)
+    { "address": "MB 100", "value": 1 }      // np. tryb automatyczny
+  ],
+
+  // Bit docelowy podąża za źródłem po opóźnieniu: wyjście → wejście potwierdzenia.
+  "digitalFeedback": [
+    { "source": "O 0", "target": "I 0", "onDelayMs": 300, "offDelayMs": 150 },  // stycznik wentylatora → potwierdzenie pracy
+    { "source": "O 2", "target": "I 2", "onDelayMs": 4000, "offDelayMs": 4000 }, // zawór → krańcówka „otwarty”
+    { "source": "O 2", "target": "I 3", "invert": true, "onDelayMs": 4000, "offDelayMs": 4000 } // zawór → krańcówka „zamknięty”
+  ],
+
+  // Wielkości analogowe z inercją I rzędu: y += (z − y)·(1 − e^(−dt/τ)), nasycenie do zakresu typu rejestru.
+  "analogFollowers": [
+    // Grzałka O 1: temperatura ×10 w MI 0 dąży do 900 (90 °C) przy załączonej, do 200 (20 °C) przy wyłączonej.
+    { "target": "MI 0", "sourceBit": "O 1", "onValue": 900, "offValue": 200, "timeConstantMs": 120000, "min": 0, "max": 1500 },
+    // Wyjście analogowe (rejestr MI 10, 0..1000) → wejście analogowe MI 11 ze skalowaniem i krótką inercją.
+    { "target": "MI 11", "sourceRegister": "MI 10", "gain": 0.5, "offset": 0, "timeConstantMs": 500, "min": 0, "max": 500 }
+  ]
+}

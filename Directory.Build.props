@@ -1,0 +1,17 @@
+<Project>
+
+  <!-- Wspólne ustawienia wszystkich projektów rozwiązania. Wersję podnosimy tylko tutaj. -->
+  <PropertyGroup>
+    <Version>0.2.0</Version>
+    <Product>Unitronics Vision PLC-HMI Simulator</Product>
+    <Company>wiking.tech</Company>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <!-- Core i Tests są AnyCPU. Architekturę (win-x64 domyślnie / win-x86) wybiera tylko App;
+         provider baz Jet: x64 → ACE 16.0, x86 → Jet 4.0 (VisiLogicDatabaseOptions). -->
+    <AnalysisLevel>latest-recommended</AnalysisLevel>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+  </PropertyGroup>
+
+</Project>
