@@ -38,7 +38,7 @@ public sealed partial class HmiPanelViewModel : ObservableObject
     private readonly IValueEntryDialog _valueEntry;
     private readonly Dispatcher _dispatcher;
     private readonly Dictionary<OperandAddress, (long Stamp, int Generation)> _touches = [];
-    private IReadOnlyDictionary<int, HmiDisplay> _displaysById = new Dictionary<int, HmiDisplay>();
+    private Dictionary<int, HmiDisplay> _displaysById = [];
     private bool _isSyncingSelection;
 
     [ObservableProperty]

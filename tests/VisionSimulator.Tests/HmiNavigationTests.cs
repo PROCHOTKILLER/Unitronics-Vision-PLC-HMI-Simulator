@@ -15,6 +15,8 @@ public sealed class HmiNavigationTests
     private const int JumpHmi = 800;
     private const int Move = 900;
 
+    private static readonly int[] ExpectedMb6Rungs = [1, 2];
+
     private static ElementOperand Mb(int index) => Mem(OperandType.MB, index);
 
     [Fact]
@@ -89,7 +91,7 @@ public sealed class HmiNavigationTests
 
         var usages = layout.FindUsages(new OperandAddress(OperandType.MB, 6));
 
-        Assert.Equal(new[] { 1, 2 }, usages.Select(u => u.RungNumber).ToArray());
+        Assert.Equal(ExpectedMb6Rungs, usages.Select(u => u.RungNumber).ToArray());
         Assert.Empty(layout.FindUsages(new OperandAddress(OperandType.MB, 99)));
         Assert.Contains(new OperandAddress(OperandType.MB, 7), layout.UsedAddresses);
     }

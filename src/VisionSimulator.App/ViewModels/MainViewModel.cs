@@ -580,8 +580,8 @@ public sealed partial class MainViewModel : ObservableObject
         ScanCount = scans;
         Hmi.ApplyRunState(state == PlcRunState.Run);
         Hmi.ApplyScreen(screen);
-        Operands.ApplyValues(operands);
-        Forces.ApplyValues(forces);
+        OperandTableViewModel.ApplyValues(operands);
+        ForceTableViewModel.ApplyValues(forces);
         LadderView.ApplyState(ladder);
         AnomalyCount = _ladder.AnomalyCount;
         LastAnomaly = _ladder.LastAnomaly;

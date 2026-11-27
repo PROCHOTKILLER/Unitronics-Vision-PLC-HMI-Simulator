@@ -456,13 +456,13 @@ public sealed class VisiLogicProjectReader : IProjectReader
     private static OperandAddress? ToMemory(int code, int address) =>
         VisiLogicOperandCodes.TryGetOperandType(code, out var type) && address >= 0 ? new OperandAddress(type, address) : null;
 
-    private static int Int(IDataRecord record, string column, int fallback = 0)
+    private static int Int(OleDbDataReader record, string column, int fallback = 0)
     {
         var value = record[column];
         return value is DBNull ? fallback : Convert.ToInt32(value, CultureInfo.InvariantCulture);
     }
 
-    private static string Text(IDataRecord record, string column)
+    private static string Text(OleDbDataReader record, string column)
     {
         var value = record[column];
         return value is DBNull

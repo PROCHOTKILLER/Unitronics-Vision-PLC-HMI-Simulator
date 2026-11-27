@@ -61,7 +61,7 @@ public sealed record LadderSubroutineLayout(
 /// <summary>Niezmienny układ całego programu LAD dla widoku drabinki.</summary>
 public sealed record LadderLayout(IReadOnlyList<LadderSubroutineLayout> Subroutines)
 {
-    private Lazy<IReadOnlyDictionary<OperandAddress, LadderOperandUsage[]>>? _usages;
+    private Lazy<Dictionary<OperandAddress, LadderOperandUsage[]>>? _usages;
 
     public static LadderLayout Empty { get; } = new([]);
 
@@ -74,10 +74,10 @@ public sealed record LadderLayout(IReadOnlyList<LadderSubroutineLayout> Subrouti
 
     // [OPTYMALIZACJA WYDAJNOŚCI (PERFORMANCE)]
     // Indeks budowany leniwie przy pierwszym zapytaniu (Lazy jest bezpieczny wątkowo); układ jest niezmienny.
-    private IReadOnlyDictionary<OperandAddress, LadderOperandUsage[]> Usages =>
-        (_usages ??= new Lazy<IReadOnlyDictionary<OperandAddress, LadderOperandUsage[]>>(BuildUsages)).Value;
+    private Dictionary<OperandAddress, LadderOperandUsage[]> Usages =>
+        (_usages ??= new Lazy<Dictionary<OperandAddress, LadderOperandUsage[]>>(BuildUsages)).Value;
 
-    private IReadOnlyDictionary<OperandAddress, LadderOperandUsage[]> BuildUsages()
+    private Dictionary<OperandAddress, LadderOperandUsage[]> BuildUsages()
     {
         var index = new Dictionary<OperandAddress, List<LadderOperandUsage>>();
         foreach (var subroutine in Subroutines)

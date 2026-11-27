@@ -9,13 +9,13 @@ namespace VisionSimulator.App.Services;
 public interface IValueEntryDialog
 {
     /// <summary>Pokazuje okno modalne; zwraca wpisany tekst albo null po anulowaniu.</summary>
-    string? Ask(string title, string currentValue, string? error = null);
+    string? Ask(string title, string currentValue, string? errorMessage = null);
 }
 
 /// <summary>Proste okno modalne z polem tekstowym i klawiaturą numeryczną (jak klawiatura ekranowa sterownika).</summary>
 public sealed class ValueEntryDialog : IValueEntryDialog
 {
-    public string? Ask(string title, string currentValue, string? error = null)
+    public string? Ask(string title, string currentValue, string? errorMessage = null)
     {
         var input = new TextBox
         {
@@ -27,9 +27,9 @@ public sealed class ValueEntryDialog : IValueEntryDialog
 
         var panel = new StackPanel { Margin = new Thickness(12) };
         panel.Children.Add(new TextBlock { Text = title, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 0, 0, 6) });
-        if (!string.IsNullOrEmpty(error))
+        if (!string.IsNullOrEmpty(errorMessage))
         {
-            panel.Children.Add(new TextBlock { Text = error, Foreground = System.Windows.Media.Brushes.Firebrick, Margin = new Thickness(0, 0, 0, 6) });
+            panel.Children.Add(new TextBlock { Text = errorMessage,Foreground = System.Windows.Media.Brushes.Firebrick, Margin = new Thickness(0, 0, 0, 6) });
         }
 
         panel.Children.Add(input);
