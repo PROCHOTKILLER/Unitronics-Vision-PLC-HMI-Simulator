@@ -28,9 +28,10 @@ Version 2 is a complete rewrite in **.NET 10 / WPF (MVVM)**. The previous .NET F
   - **x86** uses Microsoft Jet OLEDB 4.0, which ships with Windows.
 
 ## Build, test and publish
+Run the commands from the repository root (it contains a single `*.slnx` solution file):
 ```powershell
-dotnet build "Vision PLC-HMI Simulator Test.slnx"
-dotnet test  "Vision PLC-HMI Simulator Test.slnx"
+dotnet build
+dotnet test
 
 # Single-file, self-contained executables
 dotnet publish src/VisionSimulator.App -c Release -r win-x64 --self-contained true -o publish\VisionSimulator-x64
@@ -58,6 +59,13 @@ In Visual Studio, set `VisionSimulator.App` as the startup project (F5 runs the 
 | `examples/` | Sample project profile |
 
 Package versions are managed centrally in `Directory.Packages.props`, and the product version in `Directory.Build.props`.
+
+## Branches
+| Branch | Purpose |
+| :--- | :--- |
+| `main` | Production — accepted releases (solution `Vision PLC-HMI Simulator.slnx`) |
+| `test` | Development and acceptance testing (solution `Vision PLC-HMI Simulator Test.slnx`); merged into `main` after acceptance |
+| `legacy/net40` | Previous .NET Framework 4.0 implementation (read-only) |
 
 ## Versioning
 [SemVer](https://semver.org/). The v2 line starts at `0.2.0`, and every iteration increments PATCH (`0.2.1`, `0.2.2`, …). MINOR is raised only for selected releases, and `1.0.0` marks the first production-accepted release. Each release is tagged `v<version>`.
