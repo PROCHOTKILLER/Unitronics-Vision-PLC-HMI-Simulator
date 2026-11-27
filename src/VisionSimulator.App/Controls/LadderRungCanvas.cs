@@ -348,7 +348,7 @@ public sealed class LadderRungCanvas : FrameworkElement
 
     // [INTENCJA I POWÓD DZIAŁANIA]
     // Styk i cewka: adres nad symbolem, bieżąca wartość pod nim; opis operandu w podpowiedzi (brak miejsca w siatce).
-    private void DrawOperandCaption(
+    private static void DrawOperandCaption(
         DrawingContext dc,
         LadderElementLayout element,
         LadderElementState? state,

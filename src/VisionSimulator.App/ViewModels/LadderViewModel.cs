@@ -82,7 +82,8 @@ public sealed partial class LadderViewModel : ObservableObject
             Subroutines.Add(subroutine);
         }
 
-        SelectedSubroutine = layout.Subroutines.FirstOrDefault(s => s.IsEntryPoint) ?? layout.Subroutines.FirstOrDefault();
+        SelectedSubroutine = layout.Subroutines.FirstOrDefault(s => s.IsEntryPoint)
+            ?? (layout.Subroutines.Count > 0 ? layout.Subroutines[0] : null);
         if (SelectedSubroutine is null)
         {
             Rungs.Clear();

@@ -2,7 +2,7 @@
 
   <!-- Wspólne ustawienia wszystkich projektów rozwiązania. Wersję podnosimy tylko tutaj. -->
   <PropertyGroup>
-    <Version>0.2.0</Version>
+    <Version>0.2.1</Version>
     <Product>Unitronics Vision PLC-HMI Simulator</Product>
     <Company>wiking.tech</Company>
     <LangVersion>latest</LangVersion>

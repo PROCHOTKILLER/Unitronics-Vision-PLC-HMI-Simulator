@@ -79,7 +79,7 @@ public sealed partial class ForceTableViewModel : ObservableObject
     }
 
     /// <summary>Zapisuje odczytane stany w wierszach; wołać poza blokadą pamięci.</summary>
-    public void ApplyValues(IReadOnlyList<KeyValuePair<ForceRow, string>>? values)
+    public static void ApplyValues(IReadOnlyList<KeyValuePair<ForceRow, string>>? values)
     {
         if (values is null)
         {

@@ -27,7 +27,7 @@ public sealed partial class OperandTableViewModel : ObservableObject
     private readonly PlcMemory _memory;
     private readonly ForceTable _force;
     private readonly Dispatcher _dispatcher;
-    private IReadOnlyList<OperandRow> _all = [];
+    private OperandRow[] _all = [];
 
     [ObservableProperty]
     private IReadOnlyList<OperandRow> _rows = [];
@@ -120,7 +120,7 @@ public sealed partial class OperandTableViewModel : ObservableObject
     }
 
     /// <summary>Zapisuje odczytane wartości w wierszach; wołać poza blokadą pamięci.</summary>
-    public void ApplyValues(IReadOnlyList<KeyValuePair<OperandRow, string>>? values)
+    public static void ApplyValues(IReadOnlyList<KeyValuePair<OperandRow, string>>? values)
     {
         if (values is null)
         {
@@ -230,9 +230,9 @@ public sealed partial class OperandTableViewModel : ObservableObject
             .ToArray();
 
         Rows = rows;
-        Summary = _all.Count == 0
+        Summary = _all.Length == 0
             ? "Projekt nie ma operandów w pamięci sterownika."
-            : string.Create(CultureInfo.CurrentCulture, $"Operandy projektu: {_all.Count:N0} | pokazane: {rows.Length:N0}");
+            : string.Create(CultureInfo.CurrentCulture, $"Operandy projektu: {_all.Length:N0} | pokazane: {rows.Length:N0}");
     }
 
     private void RefreshForced()
